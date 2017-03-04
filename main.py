@@ -37,7 +37,7 @@ def print_and_log(log_str):
     logging.info(log_str)
     
     
-def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=True):
+def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=True, merged_summary = None, summary_writer = None):
     """Runs the model on the given data."""
     # costs = np.zeros(len(m.label_classes))
     costs = 0
@@ -61,8 +61,14 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
         feed_dict[m.targets] = y
         for i in xrange(len(m.initial_state)):
             feed_dict[m.initial_state[i]] = state[i]
-    
-        debug_val, cost, state, eval_val = session.run([m.debug, m.cost, m.final_state, eval_op], feed_dict)
+        
+        if merged_summary != None:
+            summary, debug_val, cost, state, eval_val = session.run([merged_summary, m.debug, m.cost, m.final_state, eval_op], feed_dict)
+            
+            if summary_writer != None:
+                summary_writer.add_summary(summary, step)
+        else:
+            debug_val, cost, state, eval_val = session.run([m.debug, m.cost, m.final_state, eval_op], feed_dict)
         
         if np.isnan(cost) or not np.isfinite(cost):
             print_and_log("------------------------DEBUG-----------------------")
@@ -295,7 +301,7 @@ if __name__ == '__main__':
         print('-------- Setup mtest model ----------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
             mtest = LSTM_CRF(is_training=False, config=eval_config)
-    
+        
         if mode == TRAIN:
             tf.global_variables_initializer().run()
 
@@ -312,7 +318,11 @@ if __name__ == '__main__':
             print_and_log("Test Perplexity on Test: %s" % str(test_perplexity))
 
 
-            print_and_log('----------------TRAIN---------------')  
+            print_and_log('----------------TRAIN---------------')
+            
+            merged_summary = tf.summary.merge_all()
+            train_writer = tf.summary.FileWriter(os.path.join(log_dir, 'train'), session.graph)
+             
             for i in range(config.max_max_epoch):
                 try:
                     print_and_log('-------------------------------')
@@ -325,7 +335,7 @@ if __name__ == '__main__':
                     train_perplexity = run_epoch(session, m, im_train_data, 
                                                  im_train_lbl, im_train_inf,
                                                  m.train_op,
-                                               verbose=True)
+                                               verbose=True, merged_summary = merged_summary, summary_writer = train_writer)
                     print_and_log("Epoch: %d Train Perplexity: %s" % (i + 1, str(train_perplexity)))
                     print_and_log("Time %.3f" % (time.time() - start_time) )
                     print_and_log('-------------------------------') 
@@ -354,16 +364,21 @@ if __name__ == '__main__':
                     m.saver.restore(session, model_path)
                     break
             
+            train_writer.close()
             model_path = m.saver.save(session, log_dir + "/model.ckpt")
             print_and_log("Model saved in file: %s" % model_path)
         
         if mode == TEST:
             m.saver.restore(session, model_path)
             print_and_log("Restore model saved in file: %s" % model_path)
-            
+        
+        test_writer = tf.summary.FileWriter(os.path.join(log_dir, 'test'))
+        
         print_and_log('--------------TEST--------------')  
         print_and_log('Run model on test data')
         test_perplexity = run_epoch(session, mtest, im_final_test_data, 
                                     im_final_test_lbl, im_final_test_inf,
                                     mtest.test_op, 
-                                    is_training=False, verbose=True)
+                                    is_training=False, verbose=True, merged_summary= merged_summary, summary_writer = test_writer)
+        
+        test_writer.close()
