@@ -365,6 +365,8 @@ if __name__ == '__main__':
                     break
             
             train_writer.close()
+            print_and_log("Train writer is closed")
+            
             model_path = m.saver.save(session, log_dir + "/model.ckpt")
             print_and_log("Model saved in file: %s" % model_path)
         
@@ -382,3 +384,4 @@ if __name__ == '__main__':
                                     is_training=False, verbose=True, merged_summary= merged_summary, summary_writer = test_writer)
         
         test_writer.close()
+        print_and_log("Test writer is closed")
