@@ -313,7 +313,7 @@ def gather_2d(params, indices):
     flat_idx = indices[:,0] * shape[1] + indices[:,1]
     return tf.gather(flat, flat_idx)
             
-class Recognizer(object):
+class LSTM_CRF(object):
     "A model to recognize event recorded in 3d motions"
     
     def __init__(self, is_training, config):
@@ -1045,13 +1045,13 @@ if __name__ == '__main__':
                                                     config.init_scale)
         print('-------- Setup m model ---------')
         with tf.variable_scope("model", reuse=None, initializer=initializer):
-              m = Recognizer(is_training=True, config=config)
+              m = LSTM_CRF(is_training=True, config=config)
         print('-------- Setup m_intermediate_test model ---------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-              m_intermediate_test = Recognizer(is_training=False, config=intermediate_config)
+              m_intermediate_test = LSTM_CRF(is_training=False, config=intermediate_config)
         print('-------- Setup mtest model ----------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-              mtest = Recognizer(is_training=False, config=eval_config)
+              mtest = LSTM_CRF(is_training=False, config=eval_config)
     
         if mode == TRAIN:
             tf.initialize_all_variables().run()

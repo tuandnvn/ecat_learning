@@ -40,8 +40,7 @@ SESSION_EVENTS = "session_events"
 ps = PorterStemmer() 
 
 role_to_id = {'None' : 0, 'Performer': 1, 'Object_1': 2, 'Object_2' : 3}
-# event_to_id = { 'None': 0, 'push' : 1, 'pull' : 2 , 'roll': 3, 'slide' : 4}
-event_to_id = { 'None': 0, 'push' : 1, 'pull' : 2 , 'slide' : 3}
+event_to_id = { 'None': 0, 'push' : 1, 'pull' : 2 , 'roll' : 3, 'slide': 4}
 prep_to_id = {'None': 0, 'Across': 1, 'From': 2, 'To': 3}
 
 id_to_role = {}
@@ -119,7 +118,7 @@ def read_project_data():
 
                 session_data[SESSION_DATA].append(point_data)
             
-#             # Calculate the difference of data points -> gradient feature
+            # Calculate the difference of data points -> gradient feature
             # Move all points to the same coordinations
             session_data[SESSION_DATA] = [[(session_data[SESSION_DATA][i][t] - session_data[SESSION_DATA][0][0])\
                  for t in xrange(data_length)]\
@@ -163,20 +162,57 @@ def read_project_data():
 
 
 '''Generate a training set and a testing set of data'''
-def generate_data(data, config) :
+def generate_data(project_data, config) :
     training_data = []
     testing_data = []
     
     # Flatten the data (collapse the project and session hierarchy into a list of session_data)
     for v in config.train_project_names:
-        session_data = random.sample(project_data[v], len(project_data[v]))
-        print(len(session_data))
+        # Data in all sessions of one project
+        project_session_data = random.sample(project_data[v], len(project_data[v]))
 
-        training_data += session_data[int(config.session_training_percentage[0] * len(session_data)):
-                                     int(config.session_training_percentage[1] * len(session_data))]
+        training_data += project_session_data[int(config.session_training_percentage[0] * len(project_session_data)):
+                                     int(config.session_training_percentage[1] * len(project_session_data))]
 
-        testing_data += session_data[int(config.session_testing_percentage[0] * len(session_data)):
-                                     int(config.session_testing_percentage[1] * len(session_data))]
+        if config.double_training:
+            for i in xrange(int(config.session_training_percentage[0] * len(project_session_data)),
+                                     int(config.session_training_percentage[1] * len(project_session_data))):
+                session_data = project_session_data[i]
+
+                reversed_session_data = {}
+                reversed_session_data[SESSION_NAME] = session_data[SESSION_NAME] + "_reversed"
+                reversed_session_data[SESSION_DATA] = []
+                reversed_session_data[SESSION_EVENTS] = []
+
+                for point_data in session_data[SESSION_DATA]:
+                    reversed_point_data = point_data[:39]
+                    reversed_point_data += point_data[51:63]
+                    reversed_point_data += point_data[39:51]
+
+                    reversed_session_data[SESSION_DATA].append(reversed_point_data)
+
+                for event_str in session_data[SESSION_EVENTS]:
+                    reversed_event_str = {}
+                    for key in event_str:
+                        reversed_event_str[key] = event_str[key]
+
+                    subj, obj, theme, event, prep = event_str['label']
+                    def swap_objects(value):
+                        if value == 2:
+                            return 3
+                        if value == 3:
+                            return 2
+                        return value
+
+                    reversed_event_str['label'] = (swap_objects(subj), swap_objects(obj), swap_objects(theme), event, prep)
+
+                    reversed_session_data[SESSION_EVENTS].append(reversed_event_str)
+
+                training_data.append(reversed_session_data)
+
+
+        testing_data += project_session_data[int(config.session_testing_percentage[0] * len(project_session_data)):
+                                     int(config.session_testing_percentage[1] * len(project_session_data))]
     
     return (training_data, testing_data)
 
@@ -247,7 +283,8 @@ def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_
     
     interpolated_data = np.zeros([samples * num_steps, data_point_size], dtype=np.float32)
     interpolated_lbls = np.zeros([samples, num_labels], dtype=np.int32)
-    
+    # Use a string of maximum 16 characters to store some info about a data sample 
+    interpolated_info = np.zeros([samples], dtype='|S16')
     
     for session_data in data:
         session_data_vals = session_data[SESSION_DATA]
@@ -266,6 +303,8 @@ def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_
 #                     counters[i][event_label] += 1
                 
                 interpolated_lbls[sample_counter + i] = list(event_labels)
+
+                interpolated_info[sample_counter + i] = session_data[SESSION_NAME] + '_' + str(i)
             
         sample_counter += len(session_data_events)
     
@@ -280,8 +319,11 @@ def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_
     
     rearranged_lbls = interpolated_lbls[:epoch_size * batch_size].\
             reshape((epoch_size, batch_size, num_labels))
+
+    rearranged_info = interpolated_info[:epoch_size * batch_size].\
+            reshape((epoch_size, batch_size))
     
-    return (rearranged_data, rearranged_lbls)
+    return (rearranged_data, rearranged_lbls, rearranged_info)
         
         
 '''
@@ -293,11 +335,12 @@ Take batch_size of data samples, each is a chain of num_steps data points
 x: [batch_size, num_steps, data_point_size]
 y: [batch_size, num_labels]
 '''
-def gothrough(rearranged_data, rearranged_lbls):
+def gothrough(rearranged_data, rearranged_lbls, rearranged_info):
     for i in range(np.shape(rearranged_data)[0]):
         x = rearranged_data[i, :, :,  :]
         y = rearranged_lbls[i, :, :]
-        yield (x, y)
+        z = rearranged_info[i, :]
+        yield (x, y, z)
 
 def gather_2d(params, indices):
     # only for two dim now
@@ -313,11 +356,11 @@ def gather_2d(params, indices):
     flat_idx = indices[:,0] * shape[1] + indices[:,1]
     return tf.gather(flat, flat_idx)
             
-class Recognizer(object):
+class LSTM_CRF(object):
     "A model to recognize event recorded in 3d motions"
     
     def __init__(self, is_training, config):
-        with tf.device('/gpu:2'):
+        with tf.device('/cpu:0'):
             self.batch_size = batch_size = config.batch_size
             self.num_steps = num_steps = config.num_steps
             self.n_input = n_input = config.n_input
@@ -706,7 +749,7 @@ class Recognizer(object):
         return self._test_op
 
 
-def run_epoch(session, m, data, lbl, eval_op, verbose=False, is_training=True):
+def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=True):
     """Runs the model on the given data."""
     start_time = time.time()
     # costs = np.zeros(len(m.label_classes))
@@ -725,7 +768,7 @@ def run_epoch(session, m, data, lbl, eval_op, verbose=False, is_training=True):
     if verbose:
         print_and_log('------PRINT OUT PREDICTED AND CORRECT LABELS--------')
             
-    for step, (x, y) in enumerate( gothrough(data, lbl) ):
+    for step, (x, y, z) in enumerate( gothrough(data, lbl, info) ):
         feed_dict = {}
         feed_dict[m.input_data] = x
         feed_dict[m.targets] = y
@@ -791,21 +834,20 @@ def run_epoch(session, m, data, lbl, eval_op, verbose=False, is_training=True):
             # self.n_label x m.batch_size
             y_pred_array = np.array(y_pred)
             
-            
                 
             for i in xrange(m.batch_size):
                 valid = check_validity_label( y_pred_array[:,i] )
                 valid_labels[valid] += 1
 
-                if verbose:
-                    logging.info('--------------')
+                # if verbose:
+                #     logging.info('--------------')
+                #     logging.info(from_id_labels_to_str_labels(*y_pred_array[:,i]))
+                #     logging.info(from_id_labels_to_str_labels(*y[i]))
+                    
+                if verbose and not np.all(np.equal(y_pred_array[:,i], y[i])):
+                    logging.info('-------' + z[i] + '--------')
                     logging.info(from_id_labels_to_str_labels(*y_pred_array[:,i]))
                     logging.info(from_id_labels_to_str_labels(*y[i]))
-                    
-#                 if verbose and not np.all(np.equal(y_pred[:,i], y[i,:])):
-#                     print('------------------')
-#                     print(from_id_labels_to_str_labels(*y_pred_array[:,i]))
-#                     print(from_id_labels_to_str_labels(*y[i]))
                 
             epoch_confusion_matrixs = [confusion_matrix(y[:,i], y_pred[i], range(len(label_classes[i].values())) ) 
                                        for i in xrange(len(m.label_classes))]
@@ -878,13 +920,32 @@ def run_epoch(session, m, data, lbl, eval_op, verbose=False, is_training=True):
 '''Train on a subset of sessions for each project'''
 '''Training_percentages = Percentage of training sessions/ Total # of sessions'''
 class Simple_Train_Test_Config(object):
-    
-    def __init__(self, project_data):
-        # Using all projects for training
-        self.train_project_names = project_data.keys()
-        self.test_project_names = project_data.keys()
-        self.session_training_percentage = (0, 0.6)
-        self.session_testing_percentage = (0.6, 1)
+    # Using all projects for training
+    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushacross', 
+                          'rollfrom', 'selfrollfrom',
+                          'selfslideacross', 'selfslideto']
+    test_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushacross', 
+                          'rollfrom', 'selfrollfrom',
+                          'selfslideacross', 'selfslideto']
+    session_training_percentage = (0, 0.6)
+    session_testing_percentage = (0.6, 1)
+    double_training = True
+
+class Simple_Roll_Train_Test_Config(object):
+    # Using a subset of projects for training
+    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushacross', 
+                          'rollfrom', 'selfrollfrom',
+                          'selfslideacross', 'selfslideto']
+    test_project_names = train_project_names
+    session_training_percentage = (0, 0.6)
+    session_testing_percentage = (0.6, 1)
+    double_training = True
 
 '''Only train on a subset of projects'''
 '''For each training project, train on all sessions'''
@@ -892,13 +953,12 @@ class Simple_Train_Test_Config(object):
 class Partial_Train_Test_Config(object):
     # Using a subset of projects for training
     train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
                           'selfslidefrom']
     test_project_names = ['pullto', 'pushacross', 
-                          'rollfrom', 'selfrollfrom',
                           'selfslideacross', 'selfslideto']
     session_training_percentage = (0, 1)
     session_testing_percentage = (0, 1)
+    double_training = False
 
 '''
 Verb ------  Subject  -------  Theme  --------- Object
@@ -954,7 +1014,7 @@ if __name__ == '__main__':
     # ========================================================================
     # =============================READING INPUT =============================
 
-    SIMPLE_SPLIT = 'learning2_simple_train_test.pkl'
+    SIMPLE_SPLIT = 'learning5_double_with_roll_simple_train_test.pkl'
     
     if os.path.isfile(SIMPLE_SPLIT) :
         # Load the file
@@ -969,7 +1029,7 @@ if __name__ == '__main__':
         logging.info("Read training and testing data sets from data directory ")
         read_project_data()
         print("data_length " + str(data_length))
-        train, test = generate_data(project_data, Simple_Train_Test_Config(project_data))
+        train, test = generate_data(project_data, Simple_Roll_Train_Test_Config())
 
         with open(SIMPLE_SPLIT, 'wb') as f:
             pickle.dump({'train': train,
@@ -993,7 +1053,7 @@ if __name__ == '__main__':
         hidden_size = 200       # the number of LSTM units
         max_epoch = 10          # The number of epochs trained with the initial learning rate
         max_max_epoch = 250     # Number of running epochs
-        keep_prob = 0.6         # Drop out keep probability, = 1.0 no dropout
+        keep_prob = 0.8         # Drop out keep probability, = 1.0 no dropout
         lr_decay = 0.980         # Learning rate decay
         batch_size = 40         # We could actually still use batch_size for convenient
         n_input = data_length   # Number of float values for each frame
@@ -1009,18 +1069,18 @@ if __name__ == '__main__':
     eval_config = SmallConfig()
     eval_config.keep_prob = 1
     eval_config.batch_size = 1
-    eval_config.crf_weight = 1
+    eval_config.crf_weight = 0.5
     
     print('Turn train data to intermediate form')
-    im_train_data, im_train_lbl = turn_to_intermediate_data(train, config.n_input, config.batch_size, 
+    im_train_data, im_train_lbl, im_train_inf = turn_to_intermediate_data(train, config.n_input, config.batch_size, 
                                                             config.num_steps, config.hop_step)
     
     print('Turn test data to intermediate form')
-    im_inter_test_data, im_inter_test_lbl = turn_to_intermediate_data(test, intermediate_config.n_input, 
+    im_inter_test_data, im_inter_test_lbl, im_inter_test_inf = turn_to_intermediate_data(test, intermediate_config.n_input, 
                                         intermediate_config.batch_size, 
                                         intermediate_config.num_steps, 
                                         intermediate_config.hop_step)
-    im_final_test_data, im_final_test_lbl = turn_to_intermediate_data(test, eval_config.n_input, 
+    im_final_test_data, im_final_test_lbl, im_final_test_inf = turn_to_intermediate_data(test, eval_config.n_input, 
                                         eval_config.batch_size, 
                                         eval_config.num_steps, 
                                         eval_config.hop_step)
@@ -1045,13 +1105,13 @@ if __name__ == '__main__':
                                                     config.init_scale)
         print('-------- Setup m model ---------')
         with tf.variable_scope("model", reuse=None, initializer=initializer):
-              m = Recognizer(is_training=True, config=config)
+              m = LSTM_CRF(is_training=True, config=config)
         print('-------- Setup m_intermediate_test model ---------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-              m_intermediate_test = Recognizer(is_training=False, config=intermediate_config)
+              m_intermediate_test = LSTM_CRF(is_training=False, config=intermediate_config)
         print('-------- Setup mtest model ----------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-              mtest = Recognizer(is_training=False, config=eval_config)
+              mtest = LSTM_CRF(is_training=False, config=eval_config)
     
         if mode == TRAIN:
             tf.initialize_all_variables().run()
@@ -1062,7 +1122,7 @@ if __name__ == '__main__':
             print_and_log('---------------BASELINE-------------')
 
             test_perplexity = run_epoch(session, m_intermediate_test, im_inter_test_data, 
-                                        im_inter_test_lbl, 
+                                        im_inter_test_lbl, im_inter_test_inf,
                                         m_intermediate_test.test_op, 
                                         is_training=False,
                                            verbose=False)
@@ -1080,7 +1140,8 @@ if __name__ == '__main__':
                     print_and_log("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
 
                     train_perplexity = run_epoch(session, m, im_train_data, 
-                                                 im_train_lbl, m.train_op,
+                                                 im_train_lbl, im_train_inf,
+                                                 m.train_op,
                                                verbose=True)
                     print_and_log("Epoch: %d Train Perplexity: %s" % (i + 1, str(train_perplexity)))
                     print_and_log("Time %.3f" % (time.time() - start_time) )
@@ -1091,11 +1152,13 @@ if __name__ == '__main__':
                         # Run test on train
                         print_and_log('Run model on train data')
                         test_perplexity = run_epoch(session, m_intermediate_test, im_train_data, 
-                                                    im_train_lbl, m_intermediate_test.test_op, 
+                                                    im_train_lbl, im_train_inf,
+                                                    m_intermediate_test.test_op, 
                                                     is_training=False, verbose = False)
                         print_and_log('Run model on test data')
                         test_perplexity = run_epoch(session, m_intermediate_test, im_inter_test_data, 
-                                                    im_inter_test_lbl, m_intermediate_test.test_op, 
+                                                    im_inter_test_lbl, im_inter_test_inf,
+                                                    m_intermediate_test.test_op, 
                                                     is_training=False, verbose = True)
                     
                     if i % config.save_epoch == 0:
@@ -1123,5 +1186,6 @@ if __name__ == '__main__':
 #                                     is_training=False, verbose=True)
         print_and_log('Run model on test data')
         test_perplexity = run_epoch(session, mtest, im_final_test_data, 
-                                    im_final_test_lbl, mtest.test_op, 
+                                    im_final_test_lbl, im_final_test_inf,
+                                    mtest.test_op, 
                                     is_training=False, verbose=True)

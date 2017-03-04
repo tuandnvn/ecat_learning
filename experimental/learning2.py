@@ -281,7 +281,7 @@ def gothrough(data, data_point_size, batch_size, num_steps, hop_step):
         y = rearranged_lbls[i, :, :]
         yield (x, y)
 
-class Recognizer(object):
+class LSTM_CRF(object):
     "A model to recognize event recorded in 3d motions"
     
     def __init__(self, is_training, config):
@@ -737,11 +737,11 @@ if __name__ == '__main__':
         initializer = tf.random_uniform_initializer(-config.init_scale,
                                                     config.init_scale)
         with tf.variable_scope("model", reuse=None, initializer=initializer):
-              m = Recognizer(is_training=True, config=config)
+              m = LSTM_CRF(is_training=True, config=config)
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-              m_intermediate_test = Recognizer(is_training=False, config=intermediate_config)
+              m_intermediate_test = LSTM_CRF(is_training=False, config=intermediate_config)
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-              mtest = Recognizer(is_training=False, config=eval_config)
+              mtest = LSTM_CRF(is_training=False, config=eval_config)
     
         if mode == TRAIN:
             tf.initialize_all_variables().run()
