@@ -297,7 +297,7 @@ if __name__ == '__main__':
             mtest = LSTM_CRF(is_training=False, config=eval_config)
     
         if mode == TRAIN:
-            tf.initialize_all_variables().run()
+            tf.global_variables_initializer().run()
 
             random.seed()
             random.shuffle(train)

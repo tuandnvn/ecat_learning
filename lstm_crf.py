@@ -14,7 +14,7 @@ Workaround: Turn the original params and indices to one dimension, then turn bac
 
 import numpy as np
 import tensorflow as tf
-from utils import role_to_id, prep_to_id, event_to_id
+from utils import role_to_id, prep_to_id, event_to_id, DEVICE
 
 
 def gather_2d(params, indices):
@@ -35,7 +35,7 @@ class LSTM_CRF(object):
     "A model to recognize event recorded in 3d motions"
     
     def __init__(self, is_training, config):
-        with tf.device('/cpu:0'):
+        with tf.device(DEVICE):
             self.batch_size = batch_size = config.batch_size
             self.num_steps = num_steps = config.num_steps
             self.n_input = n_input = config.n_input
