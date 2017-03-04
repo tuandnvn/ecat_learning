@@ -256,13 +256,13 @@ if __name__ == '__main__':
     
     print('Turn train data to intermediate form')
     im_train_data, im_train_lbl, im_train_inf = turn_to_intermediate_data(train, config.n_input, config.batch_size, 
-                                                            config.num_steps, config.hop_step, num_labels)
+                                                            config.num_steps, config.hop_step)
     
     print('Turn test data to intermediate form')
     im_inter_test_data, im_inter_test_lbl, im_inter_test_inf = turn_to_intermediate_data(test, intermediate_config.n_input, 
                                         intermediate_config.batch_size, 
                                         intermediate_config.num_steps, 
-                                        intermediate_config.hop_step)
+                                        intermediate_config.hop_step, )
     im_final_test_data, im_final_test_lbl, im_final_test_inf = turn_to_intermediate_data(test, eval_config.n_input, 
                                         eval_config.batch_size, 
                                         eval_config.num_steps, 

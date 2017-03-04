@@ -4,12 +4,6 @@ Created on Mar 4, 2017
 @author: Tuan
 '''
 
-import random
-
-import numpy as np
-
-from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS
-
 '''
 Generate a training set and a testing set of data
 
@@ -25,6 +19,13 @@ testing_data: similar as project_data
 
 
 '''
+
+import random
+
+import numpy as np
+from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels
+
+
 def generate_data(project_data, config) :
     training_data = []
     testing_data = []
@@ -131,7 +132,7 @@ Return:
 rearranged_data: (epoch_size, batch_size, num_steps, data_point_size)
 rearranged_lbls: (epoch_size, batch_size, num_labels)
 '''
-def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_step, num_labels):
+def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_step):
     samples = 0   # Number of samples of interpolating
     
     #counters = [Counter() for _ in xrange(num_labels)]
