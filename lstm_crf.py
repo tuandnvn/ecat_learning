@@ -45,12 +45,32 @@ class LSTM_CRF(object):
             size = config.hidden_size
             self.crf_weight = crf_weight = config.crf_weight
             
+            '''
+                                           Start
+                                             |
+                                             |
+                                             |            
+            Verb ------  Subject  -------  Theme  --------- Object
+                                             |
+                                             |
+                                             |
+                                        Preposition
+            '''
+            no_of_theme = no_of_subject = no_of_object =  len(role_to_id)
+            no_of_prep = len(prep_to_id)
+            no_of_event = len(event_to_id)
+            
             with tf.variable_scope("crf"):
-                A_start_t = tf.get_variable("A_start_t", [len(role_to_id)])
-                A_to = tf.get_variable("A_to", [len(role_to_id), len(role_to_id)])
-                A_ts = tf.get_variable("A_ts", [len(role_to_id), len(role_to_id)])
-                A_tp = tf.get_variable("A_tp", [len(role_to_id), len(prep_to_id)])
-                A_se = tf.get_variable("A_se", [len(role_to_id), len(event_to_id)])
+                '''Start -- Theme '''
+                A_start_t = tf.get_variable("A_start_t", [no_of_theme])
+                '''Theme -- Object '''
+                A_to = tf.get_variable("A_to", [no_of_theme, no_of_object])
+                '''Theme -- Subject '''
+                A_ts = tf.get_variable("A_ts", [no_of_theme, no_of_subject])
+                '''Theme -- Preposition '''
+                A_tp = tf.get_variable("A_tp", [no_of_theme, no_of_prep])
+                '''Subject -- Verb '''
+                A_se = tf.get_variable("A_se", [no_of_subject, no_of_event])
             
             # Input data and labels should be set as placeholders
             self._input_data = tf.placeholder(tf.float32, [batch_size, num_steps, n_input])
@@ -90,9 +110,6 @@ class LSTM_CRF(object):
             # Each value is (output, state)
             # output is of size:   num_steps * ( batch_size, size )
             # state is of size:   ( batch_size, cell.state_size )
-            
-#             outputs_and_states = [tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])\
-#                                   for i in xrange(self.n_labels)]
             for i in xrange(self.n_labels):
                 with tf.variable_scope("lstm" + str(i)):
                     output_and_state = tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])
@@ -107,12 +124,8 @@ class LSTM_CRF(object):
             self._final_state = [output_and_state[1]\
                        for output_and_state in outputs_and_states]
             
-            cost = 0
-            
             # self.n_labels x ( batch_size, n_classes )
             logits = []
-            
-            role_scope = None
             
             for i in xrange(self.n_labels):
                 label_class = label_classes[i]
@@ -136,75 +149,101 @@ class LSTM_CRF(object):
             logit_e = logits[3]
             logit_p = logits[4]
             
-#             logit_s = tf.ones([batch_size, len(role_to_id)], tf.float32)
-#             logit_o = tf.ones([batch_size, len(role_to_id)], tf.float32)
-#             logit_t = tf.ones([batch_size, len(role_to_id)], tf.float32)
-#             logit_e = tf.ones([batch_size, len(event_to_id)], tf.float32)
-#             logit_p = tf.ones([batch_size, len(prep_to_id)], tf.float32)
-
             # Calculate log values for Node Theme and Subject
             # Which is 2 inner nodes (we don't need to store log values for leaf nodes)
-
-
             # Message passing between Start and Theme; Theme and Object ; Theme and Preposition
 
-            # len(role_to_id) x batch_size
+            # #Theme x batch_size
             tempo_theme = []
             
-            self._debug = logits
+            def expand( logit, size ):
+                return tf.matmul(tf.expand_dims(logit, axis = 1), np.ones((1, size)) )
             
-            all_log_start_t = []
-            all_log_t_o = []
-            all_log_t_p = []
+            '''
             
-            for t in xrange(len(role_to_id)):
-                # batch_size
-                log_start_t =  logit_t[:, t] + crf_weight * A_start_t[t]
-
-                # batch_size
-#                 log_t_o = tf.log(tf.reduce_sum([tf.exp(asso.A_to[t,o] + logit_o[:, o]) 
-#                                     for o in xrange(len(role_to_id))], 0))
-#                 u = 
-                log_t_o = tf.reduce_min([(crf_weight * A_to[t,o] + logit_o[:, o]) 
-                                    for o in xrange(len(role_to_id))], 0)
-                
-                log_t_o += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_to[t,o] + logit_o[:, o] - log_t_o) 
-                                    for o in xrange(len(role_to_id))], 0))
-                
+            theme_values will store sums of values that has been passed through Start, Object, Preposition
+                                            Start
+                                             |
+                                             |
+                                             |
+                                             v            
+            Verb ------  Subject  -------  Theme  <--------- Object
+                                             ^
+                                             |
+                                             |
+                                             |
+                                        Preposition
+                                        
+                                        
+            Verb ------  Subject  -------  Theme*
+            '''
+            
+            # (batch_size, #Theme)
+            log_start_t = logit_t + crf_weight * A_start_t
+            
+            # (batch_size, #Theme)
+            log_t_o = tf.reduce_min([(crf_weight * A_to[:,o] + expand(logit_o[:, o], no_of_theme)) 
+                                    for o in xrange(no_of_object)], 0)
+            
+            log_t_o += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_to[:,o] +\
+                                                     expand(logit_o[:, o], no_of_theme) -\
+                                                      log_t_o) 
+                                    for o in xrange(no_of_object)], 0))
+            
+            # (batch_size, #Theme)
+            log_t_p = tf.reduce_min([(crf_weight * A_tp[:,p] + expand(logit_p[:, p], no_of_theme)) 
+                                    for p in xrange(no_of_prep)], 0)
+            
+            log_t_p += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_tp[:,p] +\
+                                                     expand(logit_p[:, p], no_of_theme) -\
+                                                      log_t_p) 
+                                    for p in xrange(no_of_prep)], 0))
+            
+#             for t in xrange(len(role_to_id)):
+#                 '''Start -- Theme '''
 #                 # batch_size
-                log_t_p = tf.reduce_min([(crf_weight * A_tp[t,p] + logit_p[:, p])
-                                    for p in xrange(len(prep_to_id))], 0)
-    
-                log_t_p += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_tp[t,p] + logit_p[:, p] - log_t_p)
-                                    for p in xrange(len(prep_to_id))], 0))
-                
-                all_log_start_t.append(log_start_t)
-                all_log_t_o.append(log_t_o)
-                all_log_t_p.append(log_t_p)
-                
-                # batch_size
+#                 log_start_t =  logit_t[:, t] + crf_weight * A_start_t[t]
+#                 
+#                 '''Theme -- Object '''
+#                 # batch_size
+#                 log_t_o = tf.reduce_min([(crf_weight * A_to[t,o] + logit_o[:, o]) 
+#                                     for o in xrange(len(role_to_id))], 0)
+#                 
+#                 log_t_o += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_to[t,o] + logit_o[:, o] - log_t_o) 
+#                                     for o in xrange(len(role_to_id))], 0))
+#                 
+#                 '''Theme -- Preposition'''
+#                 # batch_size
+#                 log_t_p = tf.reduce_min([(crf_weight * A_tp[t,p] + logit_p[:, p])
+#                                     for p in xrange(len(prep_to_id))], 0)
+#     
+#                 log_t_p += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_tp[t,p] + logit_p[:, p] - log_t_p)
+#                                     for p in xrange(len(prep_to_id))], 0))
+#                 
+#                 # batch_size
 #                 tempo_theme.append(log_start_t + log_t_o + log_t_p) 
-                tempo_theme.append(log_start_t + log_t_o + log_t_p) 
+#             
+#             #  ( len(role_to_id) x batch_size )
+#             # For theme
+#             theme_values = tf.pack(tempo_theme)
             
-            
-            self._debug.append(tf.transpose(tf.pack(all_log_start_t)))
-            self._debug.append(tf.transpose(tf.pack(all_log_t_o)))
-            self._debug.append(tf.transpose(tf.pack(all_log_t_p)))
-            
-            #  ( len(role_to_id) x batch_size )
-            # For theme
-            theme_values = tf.pack(tempo_theme)
+            theme_values = tf.transpose(log_start_t + log_t_o + log_t_p)
             
             tempo_subject = []
             
-            all_log_s = []
-            all_log_s_t = []
-            all_log_s_e = []
+            '''
             
+            subject_values will store sums of values that has been passed on edges (Subject, Theme*) and (Subject, Verb)
+            
+            Verb ------>  Subject  <-------  Theme*
+            
+            Subject *
+            '''
             for s in xrange(len(role_to_id)):
                 # Message passing between Theme and Subject
                 log_s = logit_s[:, s]
                 
+                '''Subject -- Theme'''
                 log_s_t = tf.reduce_min([(crf_weight * A_ts[t,s] + theme_values[t , :]) 
                                            for t in xrange(len(role_to_id))], 0)
                 
@@ -214,21 +253,14 @@ class LSTM_CRF(object):
                 # I don't need to update values at Theme now, because I would not expand from Theme anymore
 
                 # Message passing between Subject and Verb
+                '''Subject -- Verb'''
                 log_s_e = tf.reduce_min([(crf_weight * A_se[s,e] + logit_e[:,e]) 
                                            for e in xrange(len(event_to_id))], 0)
                 log_s_e += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_se[s,e] + logit_e[:,e] - log_s_e) 
                                            for e in xrange(len(event_to_id))], 0))
                 
-                all_log_s.append(log_s)
-                all_log_s_t.append(log_s_t)
-                all_log_s_e.append(log_s_e)
-                
                 tempo_subject.append(log_s + log_s_t + log_s_e)
                 
-            self._debug.append(tf.transpose(tf.pack(all_log_s)))
-            self._debug.append(tf.transpose(tf.pack(all_log_s_t)))
-            self._debug.append(tf.transpose(tf.pack(all_log_s_e)))
-
             #  (len(role_to_id) x batch_size)
             # For subject
             subject_values = tf.pack(tempo_subject)
@@ -250,31 +282,6 @@ class LSTM_CRF(object):
             correct_e = self._targets[:,3]
             correct_p = self._targets[:,4]
 
-#             logit_corrects = []
-            
-#             q = tf.constant([1, 2, 3, 4, 5, 6, 7])
-
-#             logit_corrects.append(tf.reduce_sum(logit_t[0,:]))
-            
-            # batch_size x label_size
-#             reshaped_logit_t = tf.reshape(logit_t, [-1])
-            
-#             logit_corrects.append(tf.reduce_sum(reshaped_logit_t))
-            
-#             logit_corrects.append(tf.gather(logit_t[0,correct_t[0]]))
-            
-#             logit_corrects.append(tf.gather(reshaped_logit_t, 2))
-                                  
-
-#             qs = [tf.reshape(q, [-1]) for q in tf.split(0, batch_size, logit_t)]
-#             q = tf.zeros(len(label_classes[2]))
-            # logit_t_fake = tf.zeros((batch_size, len(label_classes[2])))
-#                 for i in xrange(batch_size):
-#                     logit_correct = \
-#                         tf.gather(logit_t[i,:], correct_t[i]) 
-# #                         tf.gather(asso.A_start_t, correct_t[i])
-
-#                     logit_corrects.append(logit_correct)
             logit_correct = \
                 crf_weight * tf.gather(A_start_t, correct_t) +\
                 crf_weight * gather_2d(A_to, tf.transpose(tf.pack([correct_t, correct_o]))) +\
@@ -287,16 +294,9 @@ class LSTM_CRF(object):
                 gather_2d(logit_e, tf.transpose(tf.pack([tf.range(batch_size), correct_e]))) +\
                 gather_2d(logit_s, tf.transpose(tf.pack([tf.range(batch_size), correct_s])))
                 
-#                 gather_2d(logit_s, tf.transpose(tf.pack([tf.range(batch_size), correct_s]))) +\
-
-#             logit_correct = tf.pack(logit_corrects)
-
-#             self._cost = cost = tf.reduce_mean(- logit_correct)
             self._cost = cost = tf.reduce_mean(log_sum - logit_correct)
             
             if is_training:
-                
-            
                 self._lr = tf.Variable(0.0, trainable=False)
                 tvars = tf.trainable_variables()
                 self._train_op = []
@@ -305,12 +305,10 @@ class LSTM_CRF(object):
                                                   config.max_grad_norm)
                 optimizer = tf.train.GradientDescentOptimizer(self.lr)
                 self._train_op = optimizer.apply_gradients(zip(grads, tvars))
-#                 self._train_op = []
-                    
             else:
                 self._test_op = ( logits, A_start_t, A_to, A_ts, A_tp, A_se )
     
-        self._saver = saver = tf.train.Saver()
+        self._saver =  tf.train.Saver()
     
     def calculate_best(self, targets, logits, A_start_t, A_to, A_ts, A_tp, A_se):
         logit_s = logits[0]
@@ -379,10 +377,6 @@ class LSTM_CRF(object):
         return ([out[:,i] for i in xrange(self.n_labels)], 
                          [np.sum(correct_pred.astype(np.float32)) / self.batch_size \
                          for correct_pred in correct_preds])
-    
-    @property
-    def debug(self):
-        return self._debug
     
     def assign_lr(self, session, lr_value):
         session.run(tf.assign(self.lr, lr_value))

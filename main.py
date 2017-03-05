@@ -63,40 +63,12 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
             feed_dict[m.initial_state[i]] = state[i]
         
         if merged_summary != None:
-            summary, debug_val, cost, state, eval_val = session.run([merged_summary, m.debug, m.cost, m.final_state, eval_op], feed_dict)
+            summary, cost, state, eval_val = session.run([merged_summary, m.cost, m.final_state, eval_op], feed_dict)
             
             if summary_writer != None:
                 summary_writer.add_summary(summary, step)
         else:
-            debug_val, cost, state, eval_val = session.run([m.debug, m.cost, m.final_state, eval_op], feed_dict)
-        
-        if np.isnan(cost) or not np.isfinite(cost):
-            print_and_log("------------------------DEBUG-----------------------")
-            print_and_log("logit_s")
-            print_and_log(repr(debug_val[0]))
-            print_and_log("logit_o")
-            print_and_log(repr(debug_val[1]))
-            print_and_log("logit_t")
-            print_and_log(repr(debug_val[2]))
-            print_and_log("logit_e")
-            print_and_log(repr(debug_val[3]))
-            print_and_log("logit_p")
-            print_and_log(repr(debug_val[4]))
-            
-            print_and_log("all_log_start_t")
-            print_and_log(repr(debug_val[5]))
-            print_and_log("all_log_t_o")
-            print_and_log(repr(debug_val[6]))
-            print_and_log("all_log_t_p")
-            print_and_log(repr(debug_val[7]))
-            print_and_log("all_log_s")
-            print_and_log(repr(debug_val[8]))
-            print_and_log("all_log_s_t")
-            print_and_log(repr(debug_val[9]))
-            print_and_log("all_log_s_e")
-            print_and_log(repr(debug_val[10]))
-            raise ValueError('A nan value happens')
-    
+            cost, state, eval_val = session.run([ m.cost, m.final_state, eval_op], feed_dict)
         
         if not is_training:
             logits, A_start_t, A_to, A_ts, A_tp, A_se = eval_val
