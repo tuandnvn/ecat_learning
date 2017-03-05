@@ -6,6 +6,9 @@ Created on Mar 4, 2017
 Refactoring the code from learning5.py.
 Main module, just need to call this
 '''
+from __future__ import division
+from __future__ import print_function
+
 import datetime
 import logging
 import os
