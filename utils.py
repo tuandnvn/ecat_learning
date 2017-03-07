@@ -14,6 +14,7 @@ SESSION_DATA = "session_data"
 SESSION_EVENTS = "session_events"
 
 DEVICE = '/gpu:0'
+TEST_DEVICE = '/cpu:0'
 
 role_to_id = {'None' : 0, 'Performer': 1, 'Object_1': 2, 'Object_2' : 3}
 event_to_id = { 'None': 0, 'push' : 1, 'pull' : 2 , 'roll' : 3, 'slide': 4}

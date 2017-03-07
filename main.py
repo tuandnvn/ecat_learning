@@ -71,7 +71,9 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
             if summary_writer != None:
                 summary_writer.add_summary(summary, step)
         else:
-            cost, state, eval_val = session.run([m.cost, m.final_state, eval_op], feed_dict)
+            debug, cost, state, eval_val = session.run([m.debug, m.cost, m.final_state, eval_op], feed_dict)
+            
+#             print(debug)
         
         if not is_training:
 #             logits, A_start_t, A_to, A_ts, A_tp, A_se = eval_val
