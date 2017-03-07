@@ -57,7 +57,7 @@ class CRFTree(object):
                                                     [len(self.dictionaries[source]), len(self.dictionaries[target])])
                         
         
-    def check_tree(self):
+    def is_tree(self):
         '''
         Check to see if the input graph is actually a tree
         

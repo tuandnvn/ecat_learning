@@ -19,9 +19,9 @@ class TestTreeCrf(unittest.TestCase):
         unittest.TestCase.tearDown(self)
         
     def test_is_tree(self):
-        self.assertTrue(self.tree_1.check_tree())
-        self.assertFalse(self.tree_2.check_tree())
-        self.assertFalse(self.tree_3.check_tree())
+        self.assertTrue(self.tree_1.is_tree())
+        self.assertFalse(self.tree_2.is_tree())
+        self.assertFalse(self.tree_3.is_tree())
         
 if __name__ == '__main__':
     unittest.main()
