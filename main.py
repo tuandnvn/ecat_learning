@@ -74,8 +74,8 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
             cost, state, eval_val = session.run([ m.cost, m.final_state, eval_op], feed_dict)
         
         if not is_training:
-            logits, A_start_t, A_to, A_ts, A_tp, A_se = eval_val
-            eval_val = m.calculate_best(y, logits, A_start_t, A_to, A_ts, A_tp, A_se)
+#             logits, A_start_t, A_to, A_ts, A_tp, A_se = eval_val
+#             eval_val = m.calculate_best(y, logits, A_start_t, A_to, A_ts, A_tp, A_se)
             # Unpack the predictions and cost values
             y_pred, eval_val = eval_val
             

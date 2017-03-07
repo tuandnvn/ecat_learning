@@ -63,15 +63,15 @@ class LSTM_CRF_Exp(object):
         
         with tf.variable_scope("crf"):
             '''Start -- Theme '''
-            A_start_t = tf.get_variable("A_start_t", [no_of_theme])
+            self.A_start_t = A_start_t = tf.get_variable("A_start_t", [no_of_theme])
             '''Theme -- Object '''
-            A_to = tf.get_variable("A_to", [no_of_theme, no_of_object])
+            self.A_to = A_to = tf.get_variable("A_to", [no_of_theme, no_of_object])
             '''Theme -- Subject '''
-            A_ts = tf.get_variable("A_ts", [no_of_theme, no_of_subject])
+            self.A_ts = A_ts = tf.get_variable("A_ts", [no_of_theme, no_of_subject])
             '''Theme -- Preposition '''
-            A_tp = tf.get_variable("A_tp", [no_of_theme, no_of_prep])
+            self.A_tp = A_tp = tf.get_variable("A_tp", [no_of_theme, no_of_prep])
             '''Subject -- Verb '''
-            A_se = tf.get_variable("A_se", [no_of_subject, no_of_event])
+            self.A_se = A_se = tf.get_variable("A_se", [no_of_subject, no_of_event])
         
         # Input data and labels should be set as placeholders
         self._input_data = tf.placeholder(tf.float32, [batch_size, num_steps, n_input])
@@ -141,129 +141,129 @@ class LSTM_CRF_Exp(object):
             # logits
             logits.append(logit)
         
+        '''----------------------------------------------------------------------------'''
+        '''Message passing algorithm to sum over exponentinal terms of all combinations'''
+        '''----------------------------------------------------------------------------'''
+        logit_s = logits[0]
+        logit_o = logits[1]
+        logit_t = logits[2]
+        logit_e = logits[3]
+        logit_p = logits[4]
+        
+        # Calculate log values for Node Theme and Subject
+        # Which is 2 inner nodes (we don't need to store log values for leaf nodes)
+        # Message passing between Start and Theme; Theme and Object ; Theme and Preposition
+
+        def expand( logit, size ):
+            return tf.matmul(tf.expand_dims(logit, axis = 1), tf.ones((1, size)) )
+        
+        '''
+        
+        theme_values will store sums of values that has been passed through Start, Object, Preposition
+                                        Start
+                                         |
+                                         |
+                                         |
+                                         v            
+        Verb ------  Subject  -------  Theme  <--------- Object
+                                         ^
+                                         |
+                                         |
+                                         |
+                                    Preposition
+                                    
+                                    
+        Verb ------  Subject  -------  Theme*
+        '''
+        '''Start -- Theme '''
+        # (batch_size, #Theme)
+        log_start_t = logit_t + crf_weight * A_start_t
+        
+        '''Theme -- Object '''
+        # (batch_size, #Theme)
+        log_t_o = tf.reduce_min([(crf_weight * A_to[:,o] + expand(logit_o[:, o], no_of_theme)) 
+                                for o in xrange(no_of_object)], 0)
+        
+        log_t_o += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_to[:,o] +\
+                                                 expand(logit_o[:, o], no_of_theme) -\
+                                                  log_t_o) 
+                                for o in xrange(no_of_object)], 0))
+        
+        '''Theme -- Preposition'''
+        # (batch_size, #Theme)
+        log_t_p = tf.reduce_min([(crf_weight * A_tp[:,p] + expand(logit_p[:, p], no_of_theme)) 
+                                for p in xrange(no_of_prep)], 0)
+        
+        log_t_p += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_tp[:,p] +\
+                                                 expand(logit_p[:, p], no_of_theme) -\
+                                                  log_t_p) 
+                                for p in xrange(no_of_prep)], 0))
+        
+        # (batch_size, #Theme)
+        theme_values = log_start_t + log_t_o + log_t_p
+        
+        '''
+        
+        subject_values will store sums of values that has been passed on edges (Subject, Theme*) and (Subject, Verb)
+        
+        Verb ------>  Subject  <-------  Theme*
+        
+        Subject *
+        '''
+        
+        # (batch_size, #Subject)
+        log_s_t = tf.reduce_min([(crf_weight * A_ts[t,:] + expand(theme_values[:, t], no_of_subject)) 
+                                for t in xrange(no_of_theme)], 0)
+        
+        log_s_t += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_ts[t,:] +\
+                                                 expand(theme_values[:, t], no_of_subject) -\
+                                                  log_s_t) 
+                                for t in xrange(no_of_theme)], 0))
+        
+        # (batch_size, #Subject)
+        log_s_e = tf.reduce_min([(crf_weight * A_se[:,e] + expand(logit_e[:, e], no_of_subject)) 
+                                for e in xrange(no_of_event)], 0)
+        
+        log_s_e += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_se[:,e] +\
+                                                 expand(logit_e[:, e], no_of_subject) -\
+                                                  log_s_e) 
+                                for e in xrange(no_of_event)], 0))
+        
+        subject_values = tf.transpose(logit_s + log_s_t + log_s_e)
+
+        # Sum over all possible values of subject
+        # batch_size
+        log_sum = tf.reduce_min(subject_values, 0)
+        log_sum += tf.log(tf.reduce_sum(tf.exp(subject_values - log_sum), 0))
+
+        # This could be improve when multidimensional array indexing is supported
+        # Known issue
+        # https://github.com/tensorflow/tensorflow/issues/206
+        # Currently formularizing is ok, but gpu couldn't learn gradient 
+
+        # batch_size
+        correct_s = self._targets[:,0]
+        correct_o = self._targets[:,1]
+        correct_t = self._targets[:,2]
+        correct_e = self._targets[:,3]
+        correct_p = self._targets[:,4]
+
+        logit_correct = \
+            crf_weight * tf.gather(A_start_t, correct_t) +\
+            crf_weight * gather_2d(A_to, tf.transpose(tf.pack([correct_t, correct_o]))) +\
+            crf_weight * gather_2d(A_tp, tf.transpose(tf.pack([correct_t, correct_p]))) +\
+            crf_weight * gather_2d(A_ts, tf.transpose(tf.pack([correct_t, correct_s]))) +\
+            crf_weight * gather_2d(A_se, tf.transpose(tf.pack([correct_s, correct_e]))) +\
+            gather_2d(logit_t, tf.transpose(tf.pack([tf.range(batch_size), correct_t]))) +\
+            gather_2d(logit_o, tf.transpose(tf.pack([tf.range(batch_size), correct_o]))) +\
+            gather_2d(logit_p, tf.transpose(tf.pack([tf.range(batch_size), correct_p]))) +\
+            gather_2d(logit_e, tf.transpose(tf.pack([tf.range(batch_size), correct_e]))) +\
+            gather_2d(logit_s, tf.transpose(tf.pack([tf.range(batch_size), correct_s])))
             
+        self._cost = cost = tf.reduce_mean(log_sum - logit_correct)    
         
         if is_training:
-            '''----------------------------------------------------------------------------'''
-            '''Message passing algorithm to sum over exponentinal terms of all combinations'''
-            '''----------------------------------------------------------------------------'''
-            logit_s = logits[0]
-            logit_o = logits[1]
-            logit_t = logits[2]
-            logit_e = logits[3]
-            logit_p = logits[4]
-            
-            # Calculate log values for Node Theme and Subject
-            # Which is 2 inner nodes (we don't need to store log values for leaf nodes)
-            # Message passing between Start and Theme; Theme and Object ; Theme and Preposition
-    
-            def expand( logit, size ):
-                return tf.matmul(tf.expand_dims(logit, axis = 1), tf.ones((1, size)) )
-            
-            '''
-            
-            theme_values will store sums of values that has been passed through Start, Object, Preposition
-                                            Start
-                                             |
-                                             |
-                                             |
-                                             v            
-            Verb ------  Subject  -------  Theme  <--------- Object
-                                             ^
-                                             |
-                                             |
-                                             |
-                                        Preposition
-                                        
-                                        
-            Verb ------  Subject  -------  Theme*
-            '''
-            '''Start -- Theme '''
-            # (batch_size, #Theme)
-            log_start_t = logit_t + crf_weight * A_start_t
-            
-            '''Theme -- Object '''
-            # (batch_size, #Theme)
-            log_t_o = tf.reduce_min([(crf_weight * A_to[:,o] + expand(logit_o[:, o], no_of_theme)) 
-                                    for o in xrange(no_of_object)], 0)
-            
-            log_t_o += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_to[:,o] +\
-                                                     expand(logit_o[:, o], no_of_theme) -\
-                                                      log_t_o) 
-                                    for o in xrange(no_of_object)], 0))
-            
-            '''Theme -- Preposition'''
-            # (batch_size, #Theme)
-            log_t_p = tf.reduce_min([(crf_weight * A_tp[:,p] + expand(logit_p[:, p], no_of_theme)) 
-                                    for p in xrange(no_of_prep)], 0)
-            
-            log_t_p += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_tp[:,p] +\
-                                                     expand(logit_p[:, p], no_of_theme) -\
-                                                      log_t_p) 
-                                    for p in xrange(no_of_prep)], 0))
-            
-            # (batch_size, #Theme)
-            theme_values = log_start_t + log_t_o + log_t_p
-            
-            '''
-            
-            subject_values will store sums of values that has been passed on edges (Subject, Theme*) and (Subject, Verb)
-            
-            Verb ------>  Subject  <-------  Theme*
-            
-            Subject *
-            '''
-            
-            # (batch_size, #Subject)
-            log_s_t = tf.reduce_min([(crf_weight * A_ts[t,:] + expand(theme_values[:, t], no_of_subject)) 
-                                    for t in xrange(no_of_theme)], 0)
-            
-            log_s_t += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_ts[t,:] +\
-                                                     expand(theme_values[:, t], no_of_subject) -\
-                                                      log_s_t) 
-                                    for t in xrange(no_of_theme)], 0))
-            
-            # (batch_size, #Subject)
-            log_s_e = tf.reduce_min([(crf_weight * A_se[:,e] + expand(logit_e[:, e], no_of_subject)) 
-                                    for e in xrange(no_of_event)], 0)
-            
-            log_s_e += tf.log(tf.reduce_sum([tf.exp(crf_weight * A_se[:,e] +\
-                                                     expand(logit_e[:, e], no_of_subject) -\
-                                                      log_s_e) 
-                                    for e in xrange(no_of_event)], 0))
-            
-            subject_values = tf.transpose(logit_s + log_s_t + log_s_e)
-    
-            # Sum over all possible values of subject
-            # batch_size
-            log_sum = tf.reduce_min(subject_values, 0)
-            log_sum += tf.log(tf.reduce_sum(tf.exp(subject_values - log_sum), 0))
-    
-            # This could be improve when multidimensional array indexing is supported
-            # Known issue
-            # https://github.com/tensorflow/tensorflow/issues/206
-            # Currently formularizing is ok, but gpu couldn't learn gradient 
-    
-            # batch_size
-            correct_s = self._targets[:,0]
-            correct_o = self._targets[:,1]
-            correct_t = self._targets[:,2]
-            correct_e = self._targets[:,3]
-            correct_p = self._targets[:,4]
-    
-            logit_correct = \
-                crf_weight * tf.gather(A_start_t, correct_t) +\
-                crf_weight * gather_2d(A_to, tf.transpose(tf.pack([correct_t, correct_o]))) +\
-                crf_weight * gather_2d(A_tp, tf.transpose(tf.pack([correct_t, correct_p]))) +\
-                crf_weight * gather_2d(A_ts, tf.transpose(tf.pack([correct_t, correct_s]))) +\
-                crf_weight * gather_2d(A_se, tf.transpose(tf.pack([correct_s, correct_e]))) +\
-                gather_2d(logit_t, tf.transpose(tf.pack([tf.range(batch_size), correct_t]))) +\
-                gather_2d(logit_o, tf.transpose(tf.pack([tf.range(batch_size), correct_o]))) +\
-                gather_2d(logit_p, tf.transpose(tf.pack([tf.range(batch_size), correct_p]))) +\
-                gather_2d(logit_e, tf.transpose(tf.pack([tf.range(batch_size), correct_e]))) +\
-                gather_2d(logit_s, tf.transpose(tf.pack([tf.range(batch_size), correct_s])))
-                
-            self._cost = cost = tf.reduce_mean(log_sum - logit_correct)
+        
             
             self._lr = tf.Variable(0.0, trainable=False)
             tvars = tf.trainable_variables()
@@ -274,11 +274,12 @@ class LSTM_CRF_Exp(object):
             optimizer = tf.train.GradientDescentOptimizer(self.lr)
             self._train_op = optimizer.apply_gradients(zip(grads, tvars))
         else:
-            self._test_op = ( logits, A_start_t, A_to, A_ts, A_tp, A_se )
+            self.calculate_best( self._targets, logits )
+            # self._test_op = ( logits, A_start_t, A_to, A_ts, A_tp, A_se )
     
         self._saver =  tf.train.Saver()
     
-    def calculate_best(self, targets, logits, A_start_t, A_to, A_ts, A_tp, A_se):
+    def calculate_best(self, targets, logits):
         no_of_theme = no_of_subject = no_of_object =  len(role_to_id)
         no_of_prep = len(prep_to_id)
         no_of_event = len(event_to_id)
@@ -301,23 +302,23 @@ class LSTM_CRF_Exp(object):
         best_combination_subject = np.zeros((no_of_subject, self.batch_size, self.n_labels))
 
         for t in xrange(no_of_theme):
-            best_theme_values[t] = logit_t[:, t] + self.crf_weight * A_start_t[t]
+            best_theme_values[t] = logit_t[:, t] + self.crf_weight * self.A_start_t[t]
             best_combination_theme[t,:,2] = t
 
         for t in xrange(no_of_theme):
-            o_values = [logit_o[:, o] + self.crf_weight * A_to[t,o] for o in xrange(no_of_object)]
+            o_values = [logit_o[:, o] + self.crf_weight * self.A_to[t,o] for o in xrange(no_of_object)]
             best_theme_values[t] += np.max(o_values, 0)
             best_combination_theme[t,:,1] = np.argmax(o_values, 0)
 
         for t in xrange(no_of_theme):
-            p_values = [logit_p[:, p] + self.crf_weight * A_tp[t,p] for p in xrange(no_of_prep)]
+            p_values = [logit_p[:, p] + self.crf_weight * self.A_tp[t,p] for p in xrange(no_of_prep)]
             best_theme_values[t] += np.max(p_values, 0)
             best_combination_theme[t,:,4] = np.argmax(p_values, 0)
 
         # Message passing between Theme and Subject
         for s in xrange(no_of_subject):
             best_subject_values[s] += logit_s[:, s]
-            t_values = [best_theme_values[t] + self.crf_weight * A_ts[t,s] for t in xrange(no_of_theme)]
+            t_values = [best_theme_values[t] + self.crf_weight * self.A_ts[t,s] for t in xrange(no_of_theme)]
             best_subject_values[s] += np.max(t_values, 0)
             best_t = np.argmax(t_values, 0)
             # This could be improve when multidimensional array indexing is supported  
@@ -329,7 +330,7 @@ class LSTM_CRF_Exp(object):
 
         # Message passing between Subject and Verb
         for s in xrange(no_of_subject):
-            e_values = [self.crf_weight * A_se[s,e] + logit_e[:, e] for e in xrange(no_of_event)]
+            e_values = [self.crf_weight * self.A_se[s,e] + logit_e[:, e] for e in xrange(no_of_event)]
             best_subject_values[s] += np.max(e_values, 0)
             best_combination_subject[s,:,3] = np.argmax(e_values, 0)
 
@@ -346,7 +347,7 @@ class LSTM_CRF_Exp(object):
 
 
         # Return number of correct predictions as well as predictions
-        return ([out[:,i] for i in xrange(self.n_labels)], 
+        self._test_op = ([out[:,i] for i in xrange(self.n_labels)], 
                          [np.sum(correct_pred.astype(np.float32)) / self.batch_size \
                          for correct_pred in correct_preds])
     

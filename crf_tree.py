@@ -44,16 +44,16 @@ class CRFTree(object):
         if not self.is_tree():
             print 'This is not a tree. Please insert a tree'
         
-        self.crf_weight = {}
+        self.crf = {}
         
         with tf.variable_scope("crf"):
             for node_1 in edges:
                 for node_2 in edges[node_1]:
                     edge = (node_1, node_2)
                     sorted_edge = sorted(edge) 
-                    if not sorted_edge in self.crf_weight:
+                    if not sorted_edge in self.crf:
                         source, target = sorted_edge
-                        self.crf_weight[sorted_edge] = tf.get_variable("A_" + source + '_' + target, 
+                        self.crf[sorted_edge] = tf.get_variable("A_" + source + '_' + target, 
                                                     [len(self.dictionaries[source]), len(self.dictionaries[target])])
                         
         
@@ -145,7 +145,7 @@ class CRFTree(object):
                 
                 for collapsed_node in collapsed_nodes:
                     sorted_edge = sorted((selected_node, collapsed_node))
-                    A = self.crf_weight[sorted_edge]
+                    A = self.crf[sorted_edge]
                     logit = logits[collapsed_node]
                     
                     size_target = len(self.dictionaries[collapsed_node])
@@ -226,7 +226,7 @@ class CRFTree(object):
                 # Only count 1 for each edge
                 if (source, target) == sorted_edge:
                     target_id = self.node_type_indices[target]
-                    logit_correct += crf_weight * gather_2d ( self.crf_weight[sorted_edge], tf.tranpose(tf.pack([targets[:, source_id], targets[:, target_id]])))
+                    logit_correct += crf_weight * gather_2d ( self.crf[sorted_edge], tf.tranpose(tf.pack([targets[:, source_id], targets[:, target_id]])))
             
             logit_correct += gather_2d(logits[source], tf.transpose(tf.pack([tf.range(batch_size), targets[:, source_id]])))
 

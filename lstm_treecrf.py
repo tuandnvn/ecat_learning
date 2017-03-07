@@ -10,9 +10,6 @@ import copy
 import numpy as np
 import tensorflow as tf
 
-
-
-
 class LSTM_TREE_CRF(object):
     '''
     '''
@@ -102,29 +99,131 @@ class LSTM_TREE_CRF(object):
             
             # logits
             logits[slot] = logit
-            
-        '''----------------------------------------------------------------------------'''
-        '''Message passing algorithm to sum over exponentinal terms of all combinations'''
-        '''----------------------------------------------------------------------------'''
         
         log_sum = self.tree.sum_over(crf_weight, batch_size, logits)
         
         logit_correct = self.tree.calculate_logit_correct(crf_weight, batch_size, logits, self._targets)
         
         self._cost = cost = tf.reduce_mean(log_sum - logit_correct)
-        
+            
         if is_training:
-            self._lr = tf.Variable(0.0, trainable=False)
-            tvars = tf.trainable_variables()
-            self._train_op = []
-                
-            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
-                                              config.max_grad_norm)
-            optimizer = tf.train.GradientDescentOptimizer(self.lr)
-            self._train_op = optimizer.apply_gradients(zip(grads, tvars))
+            self.make_train_op( cost )
         else:
-            self._test_op = ( logits, A_start_t, A_to, A_ts, A_tp, A_se )
+            self.make_test_op( logits )
     
         self._saver =  tf.train.Saver()
+        
+        
+    def make_train_op(self, cost):
+        self._lr = tf.Variable(0.0, trainable=False)
+        tvars = tf.trainable_variables()
+        self._train_op = []
+            
+        grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
+                                          self.config.max_grad_norm)
+        optimizer = tf.train.GradientDescentOptimizer(self.lr)
+        self._train_op = optimizer.apply_gradients(zip(grads, tvars))
+        
+    def make_test_op(self, logits):
+        self._test_op = ( logits, self.tree.crf )
     
-    def 
+    def calculate_best(self, targets, logits, crf):
+        '''---------------------------------------------------------------'''
+        '''Message passing algorithm to max over terms of all combinations'''
+        '''---------------------------------------------------------------'''
+        # For theme
+        best_theme_values = np.zeros((no_of_theme, self.batch_size))
+        best_combination_theme = np.zeros((no_of_theme, self.batch_size, self.n_labels), dtype=np.int32)
+
+        # For subject
+        best_subject_values = np.zeros((no_of_subject, self.batch_size))
+        best_combination_subject = np.zeros((no_of_subject, self.batch_size, self.n_labels))
+
+        for t in xrange(no_of_theme):
+            best_theme_values[t] = logit_t[:, t] + self.crf_weight * A_start_t[t]
+            best_combination_theme[t,:,2] = t
+
+        for t in xrange(no_of_theme):
+            o_values = [logit_o[:, o] + self.crf_weight * A_to[t,o] for o in xrange(no_of_object)]
+            best_theme_values[t] += np.max(o_values, 0)
+            best_combination_theme[t,:,1] = np.argmax(o_values, 0)
+
+        for t in xrange(no_of_theme):
+            p_values = [logit_p[:, p] + self.crf_weight * A_tp[t,p] for p in xrange(no_of_prep)]
+            best_theme_values[t] += np.max(p_values, 0)
+            best_combination_theme[t,:,4] = np.argmax(p_values, 0)
+
+        # Message passing between Theme and Subject
+        for s in xrange(no_of_subject):
+            best_subject_values[s] += logit_s[:, s]
+            t_values = [best_theme_values[t] + self.crf_weight * A_ts[t,s] for t in xrange(no_of_theme)]
+            best_subject_values[s] += np.max(t_values, 0)
+            best_t = np.argmax(t_values, 0)
+            # This could be improve when multidimensional array indexing is supported  
+            for index in xrange(self.n_labels):
+                for i in xrange(self.batch_size):
+                    best_combination_subject[s,i,index] = best_combination_theme[best_t[i],i,index]
+            
+            best_combination_subject[s,:,0] = s
+
+        # Message passing between Subject and Verb
+        for s in xrange(no_of_subject):
+            e_values = [self.crf_weight * A_se[s,e] + logit_e[:, e] for e in xrange(no_of_event)]
+            best_subject_values[s] += np.max(e_values, 0)
+            best_combination_subject[s,:,3] = np.argmax(e_values, 0)
+
+        # Take the best out of all subject values
+        # batch_size
+        best_best_subject_values = np.argmax(best_subject_values, 0)
+
+        out = np.zeros((self.batch_size, self.n_labels))
+        for i in xrange(self.batch_size):
+            out[i] = best_combination_subject[best_best_subject_values[i], i, :]
+            
+        correct_preds = [np.equal(out[:,i], targets[:,i]) \
+                for i in xrange(self.n_labels)]
+
+
+        # Return number of correct predictions as well as predictions
+        return ([out[:,i] for i in xrange(self.n_labels)], 
+                         [np.sum(correct_pred.astype(np.float32)) / self.batch_size \
+                         for correct_pred in correct_preds])
+    
+    def assign_lr(self, session, lr_value):
+        session.run(tf.assign(self.lr, lr_value))
+    
+    @property
+    def saver(self):
+        return self._saver
+    
+    @property
+    def input_data(self):
+        return self._input_data
+
+    @property
+    def targets(self):
+        return self._targets
+
+    @property
+    def initial_state(self):
+        return self._initial_state
+
+    @property
+    def cost(self):
+        return self._cost
+
+    @property
+    def final_state(self):
+        return self._final_state
+
+    @property
+    def lr(self):
+        return self._lr
+
+    @property
+    def train_op(self):
+        return self._train_op
+    
+    @property
+    def test_op(self):
+        return self._test_op
