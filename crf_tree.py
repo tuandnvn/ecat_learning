@@ -50,7 +50,7 @@ class CRFTree(object):
             for node_1 in edges:
                 for node_2 in edges[node_1]:
                     edge = (node_1, node_2)
-                    sorted_edge = sorted(edge) 
+                    sorted_edge = tuple(sorted(edge) )
                     if not sorted_edge in self.crf:
                         source, target = sorted_edge
                         self.crf[sorted_edge] = tf.get_variable("A_" + source + '_' + target, 
@@ -144,7 +144,7 @@ class CRFTree(object):
                 log_sum = logits[size_source]
                 
                 for collapsed_node in collapsed_nodes:
-                    sorted_edge = sorted((selected_node, collapsed_node))
+                    sorted_edge = tuple(sorted((selected_node, collapsed_node)))
                     A = self.crf[sorted_edge]
                     logit = logits[collapsed_node]
                     
@@ -222,7 +222,7 @@ class CRFTree(object):
         for source in self.edges:
             source_id = self.node_type_indices[source]
             for target in self.edges[source]:
-                sorted_edge = sorted((source, target))
+                sorted_edge = tuple(sorted((source, target)))
                 # Only count 1 for each edge
                 if (source, target) == sorted_edge:
                     target_id = self.node_type_indices[target]
