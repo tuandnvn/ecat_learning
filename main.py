@@ -23,7 +23,7 @@ from sklearn.metrics.classification import confusion_matrix
 from config import Simple_Train_Test_Config, ModelConfig
 from generate_utils import generate_data, turn_to_intermediate_data, gothrough, \
     check_validity_label
-from lstm_crf import LSTM_CRF
+from lstm_crf_explicit import LSTM_CRF_Exp
 import numpy as np
 from read_utils import read_project_data
 import tensorflow as tf
@@ -269,13 +269,13 @@ if __name__ == '__main__':
                                                     config.init_scale)
         print('-------- Setup m model ---------')
         with tf.variable_scope("model", reuse=None, initializer=initializer):
-            m = LSTM_CRF(is_training=True, config=config)
+            m = LSTM_CRF_Exp(is_training=True, config=config)
         print('-------- Setup m_intermediate_test model ---------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-            m_intermediate_test = LSTM_CRF(is_training=False, config=intermediate_config)
+            m_intermediate_test = LSTM_CRF_Exp(is_training=False, config=intermediate_config)
         print('-------- Setup mtest model ----------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
-            mtest = LSTM_CRF(is_training=False, config=eval_config)
+            mtest = LSTM_CRF_Exp(is_training=False, config=eval_config)
         
         if mode == TRAIN:
             tf.global_variables_initializer().run()

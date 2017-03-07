@@ -27,6 +27,19 @@ from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels
 
 
 def generate_data(project_data, config) :
+    """
+    Splitting data set based on config
+    
+    Parameters:
+    -----------
+    project_data:  its keys consist of a list of project names
+                for each project, there are a list of sessions
+    
+    Return:
+    -------
+    training_data: same format as project_data
+    testing_data:  same format as project_data
+    """
     training_data = []
     testing_data = []
     
@@ -80,19 +93,20 @@ def generate_data(project_data, config) :
     
     return (training_data, testing_data)
 
-'''
-Check to see whether it makes a valid tuple
 
-Parameters:
------------
-labels:  A tuple of labels (Object_1, Object_2, Object_3, 
-
-
-Return:
--------
-
-'''
 def check_validity_label(labels):
+    """
+    Check to see whether it makes a valid tuple
+    
+    Parameters:
+    -----------
+    labels:  A tuple of labels (Object_1, Object_2, Object_3, 
+    
+    
+    Return:
+    -------
+    
+    """
     # Event is None -> All other values are None
     if labels[3] == 0:
         for i in xrange(5):
@@ -115,24 +129,25 @@ def check_validity_label(labels):
     
     return True
 
-'''
-A function to generate a pair of batch-data (x, y)
 
-Parameters:
------------
-data: a list of session_data
-data_point_size: Vector feature size (63)
-num_steps: A fix number of steps for each event (this should be the original num_steps - 1
-because data point difference is used instead of )
-hop_step: A fix number of frame offset btw two events
-num_labels: Number of labels in output (5)
-
-Return:
--------
-rearranged_data: (epoch_size, batch_size, num_steps, data_point_size)
-rearranged_lbls: (epoch_size, batch_size, num_labels)
-'''
 def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_step):
+    """
+    A function to generate a pair of batch-data (x, y)
+    
+    Parameters:
+    -----------
+    data: a list of session_data
+    data_point_size: Vector feature size (63)
+    num_steps: A fix number of steps for each event (this should be the original num_steps - 1
+    because data point difference is used instead of )
+    hop_step: A fix number of frame offset btw two events
+    num_labels: Number of labels in output (5)
+    
+    Return:
+    -------
+    rearranged_data: (epoch_size, batch_size, num_steps, data_point_size)
+    rearranged_lbls: (epoch_size, batch_size, num_labels)
+    """
     samples = 0   # Number of samples of interpolating
     
     #counters = [Counter() for _ in xrange(num_labels)]
@@ -205,23 +220,24 @@ def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_
     return (rearranged_data, rearranged_lbls, rearranged_info)
         
         
-'''
-Iterate through data in the rearranged format
 
-Parameters:
------------
-rearranged_data: (epoch_size, batch_size, num_steps, data_point_size)
-rearranged_lbls: (epoch_size, batch_size, num_labels)
-rearranged_info: (epoch_size, batch_size)
-
-Yields:
--------
-Take batch_size of data samples, each is a chain of num_steps data points
-x: [batch_size, num_steps, data_point_size]
-y: [batch_size, num_labels]
-z: [batch_size]
-'''
 def gothrough(rearranged_data, rearranged_lbls, rearranged_info):
+    """
+    Iterate through data in the rearranged format
+    
+    Parameters:
+    -----------
+    rearranged_data: (epoch_size, batch_size, num_steps, data_point_size)
+    rearranged_lbls: (epoch_size, batch_size, num_labels)
+    rearranged_info: (epoch_size, batch_size)
+    
+    Yields:
+    -------
+    Take batch_size of data samples, each is a chain of num_steps data points
+    x: [batch_size, num_steps, data_point_size]
+    y: [batch_size, num_labels]
+    z: [batch_size]
+    """
     for i in range(np.shape(rearranged_data)[0]):
         x = rearranged_data[i, :, :,  :]
         y = rearranged_lbls[i, :, :]
