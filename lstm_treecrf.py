@@ -104,90 +104,28 @@ class LSTM_TREE_CRF(object):
         
         logit_correct = self.tree.calculate_logit_correct(crf_weight, batch_size, logits, self._targets)
         
-        self._cost = cost = tf.reduce_mean(log_sum - logit_correct)
+        self._cost =  tf.reduce_mean(log_sum - logit_correct)
             
         if is_training:
-            self.make_train_op( cost )
+            self.make_train_op( )
         else:
-            self.make_test_op( logits )
+            self.make_test_op( )
     
         self._saver =  tf.train.Saver()
         
         
-    def make_train_op(self, cost):
+    def make_train_op(self):
         self._lr = tf.Variable(0.0, trainable=False)
         tvars = tf.trainable_variables()
         self._train_op = []
             
-        grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
+        grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars),
                                           self.config.max_grad_norm)
         optimizer = tf.train.GradientDescentOptimizer(self.lr)
         self._train_op = optimizer.apply_gradients(zip(grads, tvars))
         
-    def make_test_op(self, logits):
-        self._test_op = ( logits, self.tree.crf )
-    
-    def calculate_best(self, targets, logits, crf):
-        '''---------------------------------------------------------------'''
-        '''Message passing algorithm to max over terms of all combinations'''
-        '''---------------------------------------------------------------'''
-        # For theme
-        best_theme_values = np.zeros((no_of_theme, self.batch_size))
-        best_combination_theme = np.zeros((no_of_theme, self.batch_size, self.n_labels), dtype=np.int32)
-
-        # For subject
-        best_subject_values = np.zeros((no_of_subject, self.batch_size))
-        best_combination_subject = np.zeros((no_of_subject, self.batch_size, self.n_labels))
-
-        for t in xrange(no_of_theme):
-            best_theme_values[t] = logit_t[:, t] + self.crf_weight * A_start_t[t]
-            best_combination_theme[t,:,2] = t
-
-        for t in xrange(no_of_theme):
-            o_values = [logit_o[:, o] + self.crf_weight * A_to[t,o] for o in xrange(no_of_object)]
-            best_theme_values[t] += np.max(o_values, 0)
-            best_combination_theme[t,:,1] = np.argmax(o_values, 0)
-
-        for t in xrange(no_of_theme):
-            p_values = [logit_p[:, p] + self.crf_weight * A_tp[t,p] for p in xrange(no_of_prep)]
-            best_theme_values[t] += np.max(p_values, 0)
-            best_combination_theme[t,:,4] = np.argmax(p_values, 0)
-
-        # Message passing between Theme and Subject
-        for s in xrange(no_of_subject):
-            best_subject_values[s] += logit_s[:, s]
-            t_values = [best_theme_values[t] + self.crf_weight * A_ts[t,s] for t in xrange(no_of_theme)]
-            best_subject_values[s] += np.max(t_values, 0)
-            best_t = np.argmax(t_values, 0)
-            # This could be improve when multidimensional array indexing is supported  
-            for index in xrange(self.n_labels):
-                for i in xrange(self.batch_size):
-                    best_combination_subject[s,i,index] = best_combination_theme[best_t[i],i,index]
-            
-            best_combination_subject[s,:,0] = s
-
-        # Message passing between Subject and Verb
-        for s in xrange(no_of_subject):
-            e_values = [self.crf_weight * A_se[s,e] + logit_e[:, e] for e in xrange(no_of_event)]
-            best_subject_values[s] += np.max(e_values, 0)
-            best_combination_subject[s,:,3] = np.argmax(e_values, 0)
-
-        # Take the best out of all subject values
-        # batch_size
-        best_best_subject_values = np.argmax(best_subject_values, 0)
-
-        out = np.zeros((self.batch_size, self.n_labels))
-        for i in xrange(self.batch_size):
-            out[i] = best_combination_subject[best_best_subject_values[i], i, :]
-            
-        correct_preds = [np.equal(out[:,i], targets[:,i]) \
-                for i in xrange(self.n_labels)]
-
-
-        # Return number of correct predictions as well as predictions
-        return ([out[:,i] for i in xrange(self.n_labels)], 
-                         [np.sum(correct_pred.astype(np.float32)) / self.batch_size \
-                         for correct_pred in correct_preds])
+    def make_test_op(self):
+        pass
     
     def assign_lr(self, session, lr_value):
         session.run(tf.assign(self.lr, lr_value))

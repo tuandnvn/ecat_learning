@@ -30,7 +30,19 @@ def gather_2d(params, indices):
     
     flat_idx = indices[:,0] * shape[1] + indices[:,1]
     return tf.gather(flat, flat_idx)
-            
+
+def gather_2d_to_shape(params, indices, output_shape):
+    flat = gather_2d(params, indices)
+    return tf.reshape(flat, output_shape)
+
+# x -> (x, size)
+def expand( tensor, size ):
+    return tf.matmul(tf.expand_dims(tensor, axis = 1), tf.ones((1, size)) )
+
+# x -> (size, x)
+def expand_first( tensor, size ):
+    return tf.pack( [tensor for _ in xrange(size)] )
+          
 class LSTM_CRF_Exp(object):
     '''
     A model to recognize event recorded in 3d motions
@@ -38,6 +50,7 @@ class LSTM_CRF_Exp(object):
     '''
     
     def __init__(self, is_training, config):
+        self.config = config
         self.batch_size = batch_size = config.batch_size
         self.num_steps = num_steps = config.num_steps
         self.n_input = n_input = config.n_input
@@ -126,7 +139,7 @@ class LSTM_CRF_Exp(object):
                    for output_and_state in outputs_and_states]
         
         # self.n_labels x ( batch_size, n_classes )
-        logits = []
+        self.logits = logits = []
         
         for i in xrange(self.n_labels):
             label_class = label_classes[i]
@@ -154,8 +167,7 @@ class LSTM_CRF_Exp(object):
         # Which is 2 inner nodes (we don't need to store log values for leaf nodes)
         # Message passing between Start and Theme; Theme and Object ; Theme and Preposition
 
-        def expand( logit, size ):
-            return tf.matmul(tf.expand_dims(logit, axis = 1), tf.ones((1, size)) )
+        
         
         '''
         
@@ -260,30 +272,117 @@ class LSTM_CRF_Exp(object):
             gather_2d(logit_e, tf.transpose(tf.pack([tf.range(batch_size), correct_e]))) +\
             gather_2d(logit_s, tf.transpose(tf.pack([tf.range(batch_size), correct_s])))
             
-        self._cost = cost = tf.reduce_mean(log_sum - logit_correct)    
+        self._cost = tf.reduce_mean(log_sum - logit_correct)    
+        
+        self._debug = []
         
         if is_training:
-        
-            
-            self._lr = tf.Variable(0.0, trainable=False)
-            tvars = tf.trainable_variables()
-            self._train_op = []
-                
-            grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
-                                              config.max_grad_norm)
-            optimizer = tf.train.GradientDescentOptimizer(self.lr)
-            self._train_op = optimizer.apply_gradients(zip(grads, tvars))
+            self.make_train_op()
         else:
-            self.calculate_best( self._targets, logits )
-            # self._test_op = ( logits, A_start_t, A_to, A_ts, A_tp, A_se )
+            self.make_test_op()
+#             self._test_op = ( logits, A_start_t, A_to, A_ts, A_tp, A_se )
     
         self._saver =  tf.train.Saver()
     
-    def calculate_best(self, targets, logits):
+    def make_train_op(self):
+        self._lr = tf.Variable(0.0, trainable=False)
+        tvars = tf.trainable_variables()
+        self._train_op = []
+            
+        grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars),
+                                          self.config.max_grad_norm)
+        optimizer = tf.train.GradientDescentOptimizer(self.lr)
+        self._train_op = optimizer.apply_gradients(zip(grads, tvars))
+            
+    def make_test_op(self):
         no_of_theme = no_of_subject = no_of_object =  len(role_to_id)
         no_of_prep = len(prep_to_id)
         no_of_event = len(event_to_id)
             
+        logit_s = self.logits[0]
+        logit_o = self.logits[1]
+        logit_t = self.logits[2]
+        logit_e = self.logits[3]
+        logit_p = self.logits[4]
+        
+        '''---------------------------------------------------------------'''
+        '''Message passing algorithm to max over terms of all combinations'''
+        '''---------------------------------------------------------------'''
+        # For theme
+        best_combination_theme = [tf.zeros((self.batch_size, no_of_theme), dtype=np.int64) for _ in xrange(self.n_labels)]
+
+        # For subject
+        best_combination_subject = [tf.zeros((self.batch_size, no_of_subject), dtype=np.int64) for _ in xrange(self.n_labels)]
+        
+        # (batch_size, #Theme)
+        best_theme_values = logit_t + self.crf_weight * self.A_start_t
+        
+        best_combination_theme[2] = expand_first(range(no_of_theme), self.batch_size)
+        
+        # (#Object, batch_size, #Theme)
+        o_values = [expand(logit_o[:, o], no_of_theme) + self.crf_weight * self.A_to[:,o]  for o in xrange(no_of_object)]
+        best_theme_values += tf.reduce_max(o_values, 0)
+        
+        best_combination_theme[1] = tf.cast(tf.argmax(o_values, 0), np.int32)
+        
+        # (#Prep, batch_size, #Theme)
+        p_values = [expand(logit_p[:, p],no_of_theme)  + self.crf_weight * self.A_tp[:,p] for p in xrange(no_of_prep)]
+        best_theme_values += tf.reduce_max(p_values, 0)
+        
+        best_combination_theme[4] = tf.cast(tf.argmax(p_values, 0), np.int32)
+        
+        # (batch_size, #Subject)
+        best_subject_values = logit_s
+        
+        # Message passing between Theme and Subject
+        # (#Theme, batch_size, #Subject)
+        t_values = [expand(best_theme_values[:, t], no_of_subject)  + self.crf_weight * self.A_ts[t,:] for t in xrange(no_of_theme)]
+        best_subject_values += tf.reduce_max(t_values, 0)
+        
+        # (batch_size, #Subject)
+        best_t = tf.argmax(t_values, 0)
+        
+        # (batch_size, #Subject)
+        q = np.array([[i for _ in xrange(no_of_subject)] for i in xrange(self.batch_size)])
+        
+        # (batch_size x #Subject, 2)
+        indices = tf.reshape( tf.transpose( tf.pack ( [q, best_t]), [1, 2, 0] ), [-1, 2]) 
+        
+        for index in xrange(self.n_labels):
+            best_combination_subject[index] = gather_2d_to_shape(best_combination_theme[index], 
+                                                 indices, (self.batch_size, no_of_subject))
+        best_combination_subject[0] = expand_first(range(no_of_subject), self.batch_size)
+
+        # Message passing between Subject and Verb
+        # (#Event, batch_size, #Subject)
+        e_values = [expand(logit_e[:, e], no_of_subject) + self.crf_weight * self.A_se[:,e] for e in xrange(no_of_event)]
+        # (batch_size, #Subject)
+        best_subject_values += tf.reduce_max(e_values, 0)
+        
+        best_combination_subject[3] = tf.cast(tf.argmax(e_values, 0), np.int32)
+
+        # Take the best out of all subject values
+        # batch_size
+        best_best_subject_values = tf.argmax(best_subject_values, 1)
+        
+        # (batch_size, 2)
+        # Indices on best_combination_subject[index] should have order of (self.batch_size, #Subject)
+        indices = tf.transpose( tf.pack([range(self.batch_size), best_best_subject_values]))
+        
+        # (batch_size, self.n_labels)
+        out = tf.transpose(tf.pack([gather_2d( best_combination_subject[t], indices ) for t in xrange(self.n_labels)]))
+        
+        
+        # (self.n_labels, batch_size)
+        correct_preds = [tf.equal(out[:,i], self._targets[:,i]) \
+                for i in xrange(self.n_labels)]
+
+        # Return number of correct predictions as well as predictions
+        self._test_op = ([out[:,i] for i in xrange(self.n_labels)], 
+                         [tf.reduce_mean(tf.cast(correct_pred, np.float32)) \
+                         for correct_pred in correct_preds])
+    
+    def calculate_best(self, targets, logits, A_start_t, A_to, A_ts, A_tp, A_se):
         logit_s = logits[0]
         logit_o = logits[1]
         logit_t = logits[2]
@@ -294,31 +393,31 @@ class LSTM_CRF_Exp(object):
         '''Message passing algorithm to max over terms of all combinations'''
         '''---------------------------------------------------------------'''
         # For theme
-        best_theme_values = np.zeros((no_of_theme, self.batch_size))
-        best_combination_theme = np.zeros((no_of_theme, self.batch_size, self.n_labels), dtype=np.int32)
+        best_theme_values = np.zeros((len(role_to_id), self.batch_size))
+        best_combination_theme = np.zeros((len(role_to_id), self.batch_size, self.n_labels), dtype=np.int32)
 
         # For subject
-        best_subject_values = np.zeros((no_of_subject, self.batch_size))
-        best_combination_subject = np.zeros((no_of_subject, self.batch_size, self.n_labels))
+        best_subject_values = np.zeros((len(role_to_id), self.batch_size))
+        best_combination_subject = np.zeros((len(role_to_id), self.batch_size, self.n_labels))
 
-        for t in xrange(no_of_theme):
-            best_theme_values[t] = logit_t[:, t] + self.crf_weight * self.A_start_t[t]
+        for t in xrange(len(role_to_id)):
+            best_theme_values[t] = logit_t[:, t] + self.crf_weight * A_start_t[t]
             best_combination_theme[t,:,2] = t
 
-        for t in xrange(no_of_theme):
-            o_values = [logit_o[:, o] + self.crf_weight * self.A_to[t,o] for o in xrange(no_of_object)]
+        for t in xrange(len(role_to_id)):
+            o_values = [logit_o[:, o] + self.crf_weight * A_to[t,o] for o in xrange(len(role_to_id))]
             best_theme_values[t] += np.max(o_values, 0)
             best_combination_theme[t,:,1] = np.argmax(o_values, 0)
 
-        for t in xrange(no_of_theme):
-            p_values = [logit_p[:, p] + self.crf_weight * self.A_tp[t,p] for p in xrange(no_of_prep)]
+        for t in xrange(len(role_to_id)):
+            p_values = [logit_p[:, p] + self.crf_weight * A_tp[t,p] for p in xrange(len(prep_to_id))]
             best_theme_values[t] += np.max(p_values, 0)
             best_combination_theme[t,:,4] = np.argmax(p_values, 0)
 
         # Message passing between Theme and Subject
-        for s in xrange(no_of_subject):
+        for s in xrange(len(role_to_id)):
             best_subject_values[s] += logit_s[:, s]
-            t_values = [best_theme_values[t] + self.crf_weight * self.A_ts[t,s] for t in xrange(no_of_theme)]
+            t_values = [best_theme_values[t] + self.crf_weight * A_ts[t,s] for t in xrange(len(role_to_id))]
             best_subject_values[s] += np.max(t_values, 0)
             best_t = np.argmax(t_values, 0)
             # This could be improve when multidimensional array indexing is supported  
@@ -329,8 +428,8 @@ class LSTM_CRF_Exp(object):
             best_combination_subject[s,:,0] = s
 
         # Message passing between Subject and Verb
-        for s in xrange(no_of_subject):
-            e_values = [self.crf_weight * self.A_se[s,e] + logit_e[:, e] for e in xrange(no_of_event)]
+        for s in xrange(len(role_to_id)):
+            e_values = [self.crf_weight * A_se[s,e] + logit_e[:, e] for e in xrange(len(event_to_id))]
             best_subject_values[s] += np.max(e_values, 0)
             best_combination_subject[s,:,3] = np.argmax(e_values, 0)
 
@@ -347,12 +446,16 @@ class LSTM_CRF_Exp(object):
 
 
         # Return number of correct predictions as well as predictions
-        self._test_op = ([out[:,i] for i in xrange(self.n_labels)], 
+        return ([out[:,i] for i in xrange(self.n_labels)], 
                          [np.sum(correct_pred.astype(np.float32)) / self.batch_size \
                          for correct_pred in correct_preds])
-    
+        
     def assign_lr(self, session, lr_value):
         session.run(tf.assign(self.lr, lr_value))
+    
+    @property
+    def debug(self):
+        return self._debug
     
     @property
     def saver(self):

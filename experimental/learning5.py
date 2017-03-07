@@ -1014,7 +1014,7 @@ if __name__ == '__main__':
     # ========================================================================
     # =============================READING INPUT =============================
 
-    SIMPLE_SPLIT = 'learning5_double_with_roll_simple_train_test.pkl'
+    SIMPLE_SPLIT = 'train_test_split.pkl'
     
     if os.path.isfile(SIMPLE_SPLIT) :
         # Load the file

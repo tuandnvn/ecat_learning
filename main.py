@@ -71,7 +71,7 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
             if summary_writer != None:
                 summary_writer.add_summary(summary, step)
         else:
-            cost, state, eval_val = session.run([ m.cost, m.final_state, eval_op], feed_dict)
+            cost, state, eval_val = session.run([m.cost, m.final_state, eval_op], feed_dict)
         
         if not is_training:
 #             logits, A_start_t, A_to, A_ts, A_tp, A_se = eval_val
@@ -267,12 +267,15 @@ if __name__ == '__main__':
     with tf.Graph().as_default(), tf.Session() as session:
         initializer = tf.random_uniform_initializer(-config.init_scale,
                                                     config.init_scale)
+        
         print('-------- Setup m model ---------')
         with tf.variable_scope("model", reuse=None, initializer=initializer):
             m = LSTM_CRF_Exp(is_training=True, config=config)
+            
         print('-------- Setup m_intermediate_test model ---------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
             m_intermediate_test = LSTM_CRF_Exp(is_training=False, config=intermediate_config)
+            
         print('-------- Setup mtest model ----------')
         with tf.variable_scope("model", reuse=True, initializer=initializer):
             mtest = LSTM_CRF_Exp(is_training=False, config=eval_config)
@@ -283,20 +286,20 @@ if __name__ == '__main__':
             random.seed()
             random.shuffle(train)
 
-            print_and_log('---------------BASELINE-------------')
-
-            test_perplexity = run_epoch(session, m_intermediate_test, im_inter_test_data, 
-                                        im_inter_test_lbl, im_inter_test_inf,
-                                        m_intermediate_test.test_op, 
-                                        is_training=False,
-                                           verbose=False)
-            print_and_log("Test Perplexity on Test: %s" % str(test_perplexity))
+#             print_and_log('---------------BASELINE-------------')
+# 
+#             test_perplexity = run_epoch(session, m_intermediate_test, im_inter_test_data, 
+#                                         im_inter_test_lbl, im_inter_test_inf,
+#                                         m_intermediate_test.test_op, 
+#                                         is_training=False,
+#                                            verbose=False)
+#             print_and_log("Test Perplexity on Test: %s" % str(test_perplexity))
 
 
             print_and_log('----------------TRAIN---------------')
             
-            merged_summary = tf.summary.merge_all()
-            train_writer = tf.summary.FileWriter(os.path.join(log_dir, 'train'), session.graph)
+#             merged_summary = tf.summary.merge_all()
+#             train_writer = tf.summary.FileWriter(os.path.join(log_dir, 'train'), session.graph)
              
             for i in range(config.max_max_epoch):
                 try:
@@ -307,10 +310,14 @@ if __name__ == '__main__':
 
                     print_and_log("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
 
+#                     train_perplexity = run_epoch(session, m, im_train_data, 
+#                                                  im_train_lbl, im_train_inf,
+#                                                  m.train_op,
+#                                                verbose=True, merged_summary = merged_summary, summary_writer = train_writer)
                     train_perplexity = run_epoch(session, m, im_train_data, 
                                                  im_train_lbl, im_train_inf,
                                                  m.train_op,
-                                               verbose=True, merged_summary = merged_summary, summary_writer = train_writer)
+                                               verbose=True)
                     print_and_log("Epoch: %d Train Perplexity: %s" % (i + 1, str(train_perplexity)))
                     print_and_log("Time %.3f" % (time.time() - start_time) )
                     print_and_log('-------------------------------') 
@@ -339,8 +346,8 @@ if __name__ == '__main__':
                     m.saver.restore(session, model_path)
                     break
             
-            train_writer.close()
-            print_and_log("Train writer is closed")
+#             train_writer.close()
+#             print_and_log("Train writer is closed")
             
             model_path = m.saver.save(session, log_dir + "/model.ckpt")
             print_and_log("Model saved in file: %s" % model_path)
@@ -356,7 +363,11 @@ if __name__ == '__main__':
         test_perplexity = run_epoch(session, mtest, im_final_test_data, 
                                     im_final_test_lbl, im_final_test_inf,
                                     mtest.test_op, 
-                                    is_training=False, verbose=True, merged_summary= merged_summary, summary_writer = test_writer)
+                                    is_training=False, verbose=True)
+#         test_perplexity = run_epoch(session, mtest, im_final_test_data, 
+#                                     im_final_test_lbl, im_final_test_inf,
+#                                     mtest.test_op, 
+#                                     is_training=False, verbose=True, merged_summary= merged_summary, summary_writer = test_writer)
         
-        test_writer.close()
+#         test_writer.close()
         print_and_log("Test writer is closed")
