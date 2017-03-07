@@ -10,9 +10,9 @@ from crf_tree import CRFTree
 
 class TestTreeCrf(unittest.TestCase):
     def setUp(self):
-        self.tree_1 = CRFTree (["1", "2", "3", "4"], {}, {"1": ["2"], "2": ["1", "3", "4"], "3": ["2"], "4": ["2"] })
-        self.tree_2 = CRFTree (["1", "2", "3", "4"], {}, {"1": ["2", "3"], "2": ["1", "3", "4"], "3": ["1", "2"], "4": ["2"] })
-        self.tree_2 = CRFTree (["1", "2", "3", "4"], {}, {"1": ["2", "3"], "2": ["1", "3"], "3": ["1", "2"], "4": [] })
+        self.tree_1 = CRFTree (["1", "2", "3", "4"], dict( (str(i), [str(i)]) for i in xrange(1, 5)) , {"1": ["2"], "2": ["1", "3", "4"], "3": ["2"], "4": ["2"] })
+        self.tree_2 = CRFTree (["1", "2", "3", "4"], dict( (str(i), [str(i)]) for i in xrange(1, 5)), {"1": ["2", "3"], "2": ["1", "3", "4"], "3": ["1", "2"], "4": ["2"] })
+        self.tree_3 = CRFTree (["1", "2", "3", "4"], dict( (str(i), [str(i)]) for i in xrange(1, 5)), {"1": ["2", "3"], "2": ["1", "3"], "3": ["1", "2"], "4": [] })
         unittest.TestCase.setUp(self)
         
     def tearDown(self):

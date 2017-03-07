@@ -40,12 +40,14 @@ class CRFTree(object):
         self.node_type_indices = dict((node_type, i) for i, node_type in enumerate(self.node_types))
         self.dictionaries = dictionaries
         self.edges = edges
-        
-        if not self.is_tree():
-            print 'This is not a tree. Please insert a tree'
-        
+
+        for node_type in node_types:
+            if node_type not in dictionaries or len(dictionaries[node_type] ) == 0:
+                raise Exception('There should be at least one label for each node_type')
+
+    def initiate_crf(self):
         self.crf = {}
-        
+
         with tf.variable_scope("crf"):
             for node_1 in edges:
                 for node_2 in edges[node_1]:
@@ -53,10 +55,10 @@ class CRFTree(object):
                     sorted_edge = tuple(sorted(edge) )
                     if not sorted_edge in self.crf:
                         source, target = sorted_edge
-                        self.crf[sorted_edge] = tf.get_variable("A_" + source + '_' + target, 
-                                                    [len(self.dictionaries[source]), len(self.dictionaries[target])])
-                        
-        
+                        if source in self.dictionaries and target in self.dictionaries:
+                            self.crf[sorted_edge] = tf.get_variable("A_" + source + '_' + target, 
+                                                        [len(self.dictionaries[source]), len(self.dictionaries[target])])
+
     def is_tree(self):
         '''
         Check to see if the input graph is actually a tree
@@ -69,24 +71,27 @@ class CRFTree(object):
         Just start from any node, BFS through the tree, if it visited all nodes, and doesn't come back to any node
         """
         visited = dict([ (node, False) for node in self.node_types])
+        print 'visited' , visited
         if len(self.node_types) == 0:
             return False
         
         start = self.node_types[0]
         
-        q = deque([start])
+        q = deque([(None, start)])
         
         while len(q) != 0:
-            visit = q.popleft()
-            
+            parent, visit = q.popleft()
+
             visited[visit] = True
             for t in self.edges[visit]:
-                if t != visit:
-                    if  visited[t]:
+                if t != parent:
+                    if visited[t]:
                         # Detect a circular
                         return False
-                    q.append(t)
-                    
+
+                    q.append( (visit, t) )
+        
+        print 'visited' , visited
         return all(visited.values())
     
     @staticmethod
