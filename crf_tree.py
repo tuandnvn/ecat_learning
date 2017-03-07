@@ -157,22 +157,19 @@ class CRFTree(object):
                     
                     if selected_node == sorted_edge[0]:
                         # Same order
-                        log_edge = tf.reduce_min([(crf_weight * A[:,o] + CRFTree.expand(logit[:, o], size_source)) 
-                                                for o in xrange(size_target)], 0)
+                        # (batch_size, size_source)
+                        log_edge = tf.reduce_min(crf_weight * A + CRFTree.expand(logit, size_source, axis = 2), 1)
                         
-                        log_edge += tf.log(tf.reduce_sum([tf.exp(crf_weight * A[:,o] +\
-                                                                 CRFTree.expand(logit[:, o], size_source) -\
-                                                                  log_edge) 
-                                                for o in xrange(size_target)], 0))
+                        log_edge += tf.log(tf.reduce_sum(tf.exp(crf_weight * A +\
+                                                            CRFTree.expand(logit, size_source, axis = 2) -\
+                                                            CRFTree.expand(log_edge, size_target, axis = 1) ), 1))
                     else:
                         # Reverse order
-                        log_edge = tf.reduce_min([(crf_weight * A[o,:] + CRFTree.expand(logit[:, o], size_source)) 
-                                                for o in xrange(size_target)], 0)
+                        log_edge = tf.reduce_min(crf_weight * tf.transpose(A) + CRFTree.expand(logit, size_source, axis = 2), 1)
                         
-                        log_edge += tf.log(tf.reduce_sum([tf.exp(crf_weight * A[o,:] +\
-                                                                 CRFTree.expand(logit[:, o], size_source) -\
-                                                                  log_edge) 
-                                                for o in xrange(size_target)], 0))
+                        log_edge += tf.log(tf.reduce_sum(tf.exp(crf_weight * tf.transpose(A) +\
+                                                            CRFTree.expand(logit, size_source, axis = 2) -\
+                                                            CRFTree.expand(log_edge, size_target, axis = 1) ), 1))
                         
                     log_sum += log_edge
             
