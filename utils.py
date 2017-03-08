@@ -13,6 +13,13 @@ SESSION_NAME = "session_name"
 SESSION_DATA = "session_data"
 SESSION_EVENTS = "session_events"
 
+SUBJECT = 'Subject'
+OBJECT = 'Object'
+THEME = 'Theme'
+EVENT = 'Event'
+PREP = 'Preposition'
+ALL_SLOTS = [SUBJECT, OBJECT, THEME, EVENT, PREP]
+
 DEVICE = '/gpu:0'
 TEST_DEVICE = '/cpu:0'
 

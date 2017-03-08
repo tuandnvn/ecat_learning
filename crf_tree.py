@@ -45,7 +45,7 @@ class CRFTree(object):
         Parameters:
         ----------
         node_types:    list of String
-        dictionaries:  gensim Dictionaries that store words in the tuples
+        dictionaries:  dictionary of dictionaries, for each node_type there is a dictioanry from node value to id
         edges:         dictionary of list representation of edges
         '''
         self.node_types = node_types
@@ -146,6 +146,7 @@ class CRFTree(object):
         # Remove edges on the cloned edges, not from self.edges
         # We will remove until there are no edges left
         cloned_edges = copy.deepcopy( self.edges )
+        cloned_logits = copy.deepcopy( logits )
         
         def recursive_sum_over( edges, logits ):
             '''
@@ -166,7 +167,6 @@ class CRFTree(object):
                 selected_node, collapsed_nodes = CRFTree.look_for_collapsing_node(edges)
                 
                 size_source = len(self.dictionaries[selected_node])
-                log_sum = logits[size_source]
                 
                 for collapsed_node in collapsed_nodes:
                     sorted_edge = tuple(sorted((selected_node, collapsed_node)))
@@ -190,10 +190,8 @@ class CRFTree(object):
                                                                 expand(logit, size_source, axis = 2) -\
                                                                 expand(log_edge, size_target, axis = 1) ), 1))
                         
-                    log_sum += log_edge
+                    logits[selected_node] += log_edge
             
-                logits[selected_node] = log_sum
-                
                 for collapsed_node in collapsed_nodes:
                     del edges[collapsed_node]
                     del logits[collapsed_node]
@@ -220,7 +218,7 @@ class CRFTree(object):
                 else:
                     raise Exception("At this state, there should be only one logit")
         
-        return recursive_sum_over (cloned_edges, logits)
+        return recursive_sum_over (cloned_edges, cloned_logits)
     
     def calculate_logit_correct(self, crf_weight, batch_size, logits, targets):
         '''
@@ -271,126 +269,103 @@ class CRFTree(object):
         
         Here I use a kind of collapsing algorithm, each time, looking for a node to collapse on. All leaf nodes connected to this node 
         are collapsed into this center node.
-        
-        
         '''
-        # Remove edges on the cloned edges, not from self.edges
-        # We will remove until there are no edges left
-        cloned_edges = copy.deepcopy( self.edges )
         
-        def recursive_predict(edges, logits, best_combinations, best_values ):
+        
+        def recursive_predict(edges, logits, best_combinations = {}, collapse_list = deque() ):
             '''
             Parameters:
             -----------
             edges:          Current state of edges (some nodes and edges might have been collapsed) 
             logits:         add a batch_size so that we don't have to recalculate
-            best_combinations: Current best combination states, map from node (only nodes still appear in edges) to a tensorflow of size (batch_size, # of values)
+            best_combinations: Current best combination states, map from each node of collapsed_nodes to a tensorflow of size (batch_size, # of values of selected_node)
+            collapse_list:  Dict from selected_node to collapsed_nodes that has been collected
             
             Return:
             -------
             out:            numpy array of size = (batch_size, len(self.node_types) )
             '''
             if not CRFTree.empty(edges):
-                pass
-            else:
-                # batch_size
-                best_best_values = tf.argmax(best_values, 1)
+                # All nodes in collapsed_nodes will be collapsed into selected_node
+                selected_node, collapsed_nodes = CRFTree.look_for_collapsing_node(edges)
                 
-                indices = tf.transpose( tf.pack([range(self.batch_size), best_best_values]))
+                collapse_list.append((selected_node, collapsed_nodes))
                 
-                out = tf.transpose(tf.pack([gather_2d( best_combinations[t], indices ) for t in xrange(self.n_labels)]))
+                size_source = len(self.dictionaries[selected_node])
                 
-                return out
-        
-        """
-        best_combinations is a dictionary from node to a tensor sized (self.batch_size, len(self.dictionaries[node]) )
-        
-        Everytime the graph is collapsed, 
-        
-        
-        """
-        best_combinations = {}
-        
-        """
-        best_values is a dictionary from node to a tensor sized (self.batch_size, len(self.dictionaries[node]) )
-        """
-        best_values = {}
-        return recursive_predict (cloned_edges , logits, best_combinations, best_values )
-        
-    
-        no_of_theme = no_of_subject = no_of_object =  len(role_to_id)
-        no_of_prep = len(prep_to_id)
-        no_of_event = len(event_to_id)
+                for collapsed_node in collapsed_nodes:
+                    sorted_edge = tuple(sorted((selected_node, collapsed_node)))
+                    A = self.crf[sorted_edge]
+                    logit = logits[collapsed_node]
+                    
+                    if selected_node == sorted_edge[0]:
+                        # Same order
+                        # (batch_size, size_target, size_source)
+                        log_edge = crf_weight * A + expand(logit, size_source, axis = 2)
+                    else:
+                        # Reverse order
+                        # (batch_size, size_target, size_source)
+                        log_edge = crf_weight * tf.transpose(A) + expand(logit, size_source, axis = 2)
+                    
+                    # (batch_size, size_source)
+                    best_combinations[collapsed_node] = tf.cast(tf.argmax(log_edge, 1), np.int32)
+                    
+                    logits[selected_node] += tf.reduce_max(log_edge, 1)
             
-        logit_s = self.logits[0]
-        logit_o = self.logits[1]
-        logit_t = self.logits[2]
-        logit_e = self.logits[3]
-        logit_p = self.logits[4]
+                for collapsed_node in collapsed_nodes:
+                    del edges[collapsed_node]
+                    del logits[collapsed_node]
+                
+                # Remaining nodes that connected to collapsed_selected_node
+                remaining_nodes = list(set(edges[selected_node]) - collapsed_nodes)
+                
+                edges[selected_node] = remaining_nodes
+                
+                return recursive_predict(edges, logits)
+            else:
+                if len(logits) == 1:
+                    remaining_node = logits.values()[0]
+                    
+                    size_remaining = len(self.dictionaries[remaining_node])
+                    
+                    """
+                    Recalculate best_combinations according to the last node
+                    """
+                    recalculated_best_combinations = [tf.zeros((self.batch_size, size_remaining), dtype=np.int32) for _ in xrange(len(self.node_types))]
+                    recalculated_best_combinations[self.node_type_indices[remaining_node]] = expand_first(range(size_remaining), self.batch_size)
+                    
+                    while len(collapse_list) > 0:
+                        selected_node, collapsed_nodes = collapse_list.pop()
+                        selected_node_index = self.node_type_indices[selected_node]
+                        
+                        """
+                        Propagate from selected_node to collapsed_nodes
+                        """
+                        # (batch_size, #Subject)
+                        q = np.array([[i for _ in xrange(size_remaining)] for i in xrange(self.batch_size)])
+                        
+                        # (batch_size x #Subject, 2)
+                        indices = tf.reshape( tf.transpose( tf.pack ( [q, recalculated_best_combinations[selected_node_index] ]), [1, 2, 0] ), [-1, 2]) 
+                        
+                        for collapsed_node in collapsed_nodes:
+                            collapsed_index = self.node_type_indices[collapsed_node]
+                            recalculated_best_combinations[collapsed_index] = gather_2d_to_shape(best_combinations[collapsed_node], 
+                                                                 indices, (self.batch_size, size_remaining))
+            
+                    # batch_size
+                    best_best_values = tf.argmax(logits[remaining_node], 1)
+                    
+                    indices = tf.transpose( tf.pack([range(self.batch_size), best_best_values]))
+                    
+                    out = tf.transpose(tf.pack([gather_2d( recalculated_best_combinations[t], indices ) for t in xrange(len(self.node_types))]))
+                    
+                    return out
+                else:
+                    raise Exception("At this state, there should be only one logit")
         
-        '''---------------------------------------------------------------'''
-        '''Message passing algorithm to max over terms of all combinations'''
-        '''---------------------------------------------------------------'''
-        # For theme
-        best_combination_theme = [tf.zeros((self.batch_size, no_of_theme), dtype=np.int64) for _ in xrange(self.n_labels)]
-
-        # For subject
-        best_combination_subject = [tf.zeros((self.batch_size, no_of_subject), dtype=np.int64) for _ in xrange(self.n_labels)]
-        
-        # (batch_size, #Theme)
-        best_theme_values = logit_t + self.crf_weight * self.A_start_t
-        
-        best_combination_theme[2] = expand_first(range(no_of_theme), self.batch_size)
-        
-        # (#Object, batch_size, #Theme)
-        o_values = [expand(logit_o[:, o], no_of_theme) + self.crf_weight * self.A_to[:,o]  for o in xrange(no_of_object)]
-        best_theme_values += tf.reduce_max(o_values, 0)
-        
-        best_combination_theme[1] = tf.cast(tf.argmax(o_values, 0), np.int32)
-        
-        # (#Prep, batch_size, #Theme)
-        p_values = [expand(logit_p[:, p],no_of_theme)  + self.crf_weight * self.A_tp[:,p] for p in xrange(no_of_prep)]
-        best_theme_values += tf.reduce_max(p_values, 0)
-        
-        best_combination_theme[4] = tf.cast(tf.argmax(p_values, 0), np.int32)
-        
-        # (batch_size, #Subject)
-        best_subject_values = logit_s
-        
-        # Message passing between Theme and Subject
-        # (#Theme, batch_size, #Subject)
-        t_values = [expand(best_theme_values[:, t], no_of_subject)  + self.crf_weight * self.A_ts[t,:] for t in xrange(no_of_theme)]
-        best_subject_values += tf.reduce_max(t_values, 0)
-        
-        # (batch_size, #Subject)
-        best_t = tf.argmax(t_values, 0)
-        
-        # (batch_size, #Subject)
-        q = np.array([[i for _ in xrange(no_of_subject)] for i in xrange(self.batch_size)])
-        
-        # (batch_size x #Subject, 2)
-        indices = tf.reshape( tf.transpose( tf.pack ( [q, best_t]), [1, 2, 0] ), [-1, 2]) 
-        
-        for index in xrange(self.n_labels):
-            best_combination_subject[index] = gather_2d_to_shape(best_combination_theme[index], 
-                                                 indices, (self.batch_size, no_of_subject))
-        best_combination_subject[0] = expand_first(range(no_of_subject), self.batch_size)
-
-        # Message passing between Subject and Verb
-        # (#Event, batch_size, #Subject)
-        e_values = [expand(logit_e[:, e], no_of_subject) + self.crf_weight * self.A_se[:,e] for e in xrange(no_of_event)]
-        # (batch_size, #Subject)
-        best_subject_values += tf.reduce_max(e_values, 0)
-        
-        best_combination_subject[3] = tf.cast(tf.argmax(e_values, 0), np.int32)
-
-        # Take the best out of all subject values
-        # batch_size
-        best_best_subject_values = tf.argmax(best_subject_values, 1)
-        
-        # (batch_size, 2)
-        # Indices on best_combination_subject[index] should have order of (self.batch_size, #Subject)
-        indices = tf.transpose( tf.pack([range(self.batch_size), best_best_subject_values]))
-        
-        # (batch_size, self.n_labels)
-        out = tf.transpose(tf.pack([gather_2d( best_combination_subject[t], indices ) for t in xrange(self.n_labels)]))
+        # Remove edges on the cloned edges, not from self.edges
+        # We will remove until there are no edges left
+        cloned_edges = copy.deepcopy( self.edges )
+        cloned_logits = copy.deepcopy( logits )
+            
+        return recursive_predict (cloned_edges , cloned_logits )

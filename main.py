@@ -18,12 +18,14 @@ import shutil
 import sys
 import time
 
+import argparse
 from sklearn.metrics.classification import confusion_matrix
 
-from config import Simple_Train_Test_Config, ModelConfig
+from config import Simple_Train_Test_Config, ExplicitConfig, TreeConfig
 from generate_utils import generate_data, turn_to_intermediate_data, gothrough, \
     check_validity_label
 from lstm_crf_explicit import LSTM_CRF_Exp
+from lstm_treecrf import LSTM_TREE_CRF
 import numpy as np
 from read_utils import read_project_data
 import tensorflow as tf
@@ -33,7 +35,7 @@ from utils import label_classes, num_labels, from_id_labels_to_str_labels
 # default mode is to train and test at the same time
 TRAIN = 'TRAIN'
 TEST = 'TEST'
-mode = TRAIN
+
 
 def print_and_log(log_str):
     print (log_str)
@@ -152,38 +154,49 @@ if __name__ == '__main__':
     # ========================================================================
     # ========================================================================
     # ===========================SETUP TRAIN TEST=============================
-
+    parser = argparse.ArgumentParser(description='A script to train and test using LSTM-CRF')
     
-    if len(sys.argv) > 1:
-        train_test_config = sys.argv[1] 
-        if train_test_config == 'train':
-            mode = TRAIN
-        if train_test_config == 'test' :
-            mode = TEST
+    parser.add_argument('-t', '--test', action = 'store_true', 
+                                help = "If set, it is TEST, by default it is TRAIN" )
+    
+    parser.add_argument('-m', '--model',  action='store',
+                                help = "Where to save the model or to load the model. By default, it is saved to the log dir" )
+    
+    parser.add_argument('-r', '--tree',  action='store_true',
+                                help = "Whether to use the general tree LSTM-CRF model. By default, the explicit version is used." )
+    
+    args = parser.parse_args()
+    
+    mode = TRAIN
+    if args.test:
+        mode = TEST
+        
+    model_path = args.model
+    
+    use_tree = args.tree
     
     if mode == TRAIN:
-        if len(sys.argv) > 2:
-            log_dir = sys.argv[2] 
-        else:
-            current_time = datetime.datetime.now()
-            time_str = '%s_%s_%s_%s_%s_%s' % (current_time.year, current_time.month, current_time.day, 
-                                  current_time.hour, current_time.minute, current_time.second)
+        current_time = datetime.datetime.now()
+        time_str = '%s_%s_%s_%s_%s_%s' % (current_time.year, current_time.month, current_time.day, 
+                              current_time.hour, current_time.minute, current_time.second)
 
-            log_dir = 'logs/run_' + time_str
+        log_dir = os.path.join('logs', 'run_' + time_str)
             
         print('Train and output into directory ' + log_dir)
         os.makedirs(log_dir)
-        logging.basicConfig(filename = log_dir + '/logs.log',level=logging.DEBUG)
+        logging.basicConfig(filename = os.path.join(log_dir, 'logs.log'),level=logging.DEBUG)
         
         # Copy the current executed py file to log (To make sure we can replicate the experiment with the same code)
         shutil.copy(os.path.realpath(__file__), log_dir)
+        
+        if not model_path:
+            model_path = os.path.join(log_dir, "model.ckpt")
     
     if mode == TEST:
-        if len(sys.argv) > 2:
-            model_path = sys.argv[2] 
+        if model_path:
             print('Test using model ' + model_path)
         else:
-            sys.exit("learning.py test model_path")
+            sys.exit("learning.py -t -m model_path")
 
     
     # ========================================================================
@@ -218,24 +231,28 @@ if __name__ == '__main__':
     print_and_log('Train size ' + str(len(train)))
     print_and_log('Test size ' + str(len(test)))
 
-    
-    config = ModelConfig(data_length, label_classes)
+    if use_tree:
+        config = TreeConfig(data_length, label_classes)
+        intermediate_config = TreeConfig(data_length, label_classes)
+        eval_config = TreeConfig(data_length, label_classes)
+    else:
+        config = ExplicitConfig(data_length, label_classes)
+        intermediate_config = ExplicitConfig(data_length, label_classes)
+        eval_config = ExplicitConfig(data_length, label_classes)
     
     '''
     No dropout
     '''
-    intermediate_config = ModelConfig(data_length, label_classes)
     intermediate_config.keep_prob = 1
-    
     '''
     No droupout
     Single input
     Decrease CRF weight 
     '''
-    eval_config = ModelConfig(data_length, label_classes)
     eval_config.keep_prob = 1
     eval_config.batch_size = 1
     eval_config.crf_weight = 0.5
+    
     
     print('Turn train data to intermediate form')
     im_train_data, im_train_lbl, im_train_inf = turn_to_intermediate_data(train, config.n_input, config.batch_size, 
@@ -270,33 +287,36 @@ if __name__ == '__main__':
         initializer = tf.random_uniform_initializer(-config.init_scale,
                                                     config.init_scale)
         
-        print('-------- Setup m model ---------')
-        with tf.variable_scope("model", reuse=None, initializer=initializer):
-            m = LSTM_CRF_Exp(is_training=True, config=config)
-            
-        print('-------- Setup m_intermediate_test model ---------')
-        with tf.variable_scope("model", reuse=True, initializer=initializer):
-            m_intermediate_test = LSTM_CRF_Exp(is_training=False, config=intermediate_config)
-            
-        print('-------- Setup mtest model ----------')
-        with tf.variable_scope("model", reuse=True, initializer=initializer):
-            mtest = LSTM_CRF_Exp(is_training=False, config=eval_config)
+        if use_tree:
+            print('-------- Setup m model ---------')
+            with tf.variable_scope("model", reuse=None, initializer=initializer):
+                m = LSTM_TREE_CRF(is_training=True, config=config)
+                
+            print('-------- Setup m_intermediate_test model ---------')
+            with tf.variable_scope("model", reuse=True, initializer=initializer):
+                m_intermediate_test = LSTM_TREE_CRF(is_training=False, config=intermediate_config)
+                
+            print('-------- Setup mtest model ----------')
+            with tf.variable_scope("model", reuse=True, initializer=initializer):
+                mtest = LSTM_TREE_CRF(is_training=False, config=eval_config)
+        else:
+            print('-------- Setup m model ---------')
+            with tf.variable_scope("model", reuse=None, initializer=initializer):
+                m = LSTM_CRF_Exp(is_training=True, config=config)
+                
+            print('-------- Setup m_intermediate_test model ---------')
+            with tf.variable_scope("model", reuse=True, initializer=initializer):
+                m_intermediate_test = LSTM_CRF_Exp(is_training=False, config=intermediate_config)
+                
+            print('-------- Setup mtest model ----------')
+            with tf.variable_scope("model", reuse=True, initializer=initializer):
+                mtest = LSTM_CRF_Exp(is_training=False, config=eval_config)
         
         if mode == TRAIN:
             tf.global_variables_initializer().run()
 
             random.seed()
             random.shuffle(train)
-
-#             print_and_log('---------------BASELINE-------------')
-# 
-#             test_perplexity = run_epoch(session, m_intermediate_test, im_inter_test_data, 
-#                                         im_inter_test_lbl, im_inter_test_inf,
-#                                         m_intermediate_test.test_op, 
-#                                         is_training=False,
-#                                            verbose=False)
-#             print_and_log("Test Perplexity on Test: %s" % str(test_perplexity))
-
 
             print_and_log('----------------TRAIN---------------')
             
@@ -340,8 +360,8 @@ if __name__ == '__main__':
                     
                     if i % config.save_epoch == 0:
                         start_time = time.time()
-                        model_path = m.saver.save(session, log_dir + "/model.ckpt")
-                        print_and_log("Model saved in file: %s" % model_path)
+                        _model_path = m.saver.save(session, log_dir + "/model.ckpt")
+                        print_and_log("Model saved in file: %s" % _model_path)
                         print_and_log("Time %.3f" % (time.time() - start_time) )
                 except ValueError:
                     print_and_log("Value error, reload the most recent saved model")
@@ -351,8 +371,8 @@ if __name__ == '__main__':
 #             train_writer.close()
 #             print_and_log("Train writer is closed")
             
-            model_path = m.saver.save(session, log_dir + "/model.ckpt")
-            print_and_log("Model saved in file: %s" % model_path)
+            _model_path = m.saver.save(session, log_dir + "/model.ckpt")
+            print_and_log("Model saved in file: %s" % _model_path)
         
         if mode == TEST:
             m.saver.restore(session, model_path)

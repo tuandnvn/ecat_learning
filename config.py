@@ -3,11 +3,16 @@ Created on Mar 4, 2017
 
 @author: Tuan
 '''
-
 '''
 Train on a subset of sessions for each project
 Training_percentages = Percentage of training sessions/ Total # of sessions
 '''
+
+from crf_tree import CRFTree
+from utils import ALL_SLOTS, SUBJECT, role_to_id, OBJECT, THEME, prep_to_id, \
+    EVENT, event_to_id, PREP
+
+
 class Simple_Train_Test_Config(object):
     # Using all projects for training
     train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
@@ -40,7 +45,7 @@ class Partial_Train_Test_Config(object):
     double_training = False
     
     
-class ModelConfig(object):
+class ExplicitConfig(object):
     init_scale = 0.1
     learning_rate = 0.5     # Set this value higher without norm clipping
                             # might make the cost explodes
@@ -61,3 +66,32 @@ class ModelConfig(object):
     def __init__(self, data_length, label_classes):
         self.n_input = data_length  # Number of float values for each frame
         self.label_classes = label_classes # Number of classes, for each output label
+        
+        
+class TreeConfig(ExplicitConfig):
+    def __init__(self, data_length, label_classes):
+        ExplicitConfig.__init__(self, data_length, label_classes)
+        
+        # Create tree 
+        dictionaries = {}
+        dictionaries[SUBJECT] = role_to_id
+        dictionaries[OBJECT] = role_to_id
+        dictionaries[THEME] = role_to_id
+        dictionaries[PREP] = prep_to_id
+        dictionaries[EVENT] = event_to_id
+        
+        '''
+        Event ------  Subject  -------  Theme  --------- Object
+                                         |
+                                         |
+                                         |
+                                    Preposition
+        '''
+        
+        edges = { SUBJECT: [THEME, EVENT],
+                  OBJECT:  [THEME],
+                  THEME : [PREP, OBJECT, SUBJECT],
+                  PREP: [THEME],
+                  EVENT: [SUBJECT]  }
+        
+        self.tree = CRFTree( ALL_SLOTS, dictionaries, edges )
