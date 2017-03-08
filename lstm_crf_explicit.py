@@ -298,6 +298,112 @@ class LSTM_CRF_Exp(object):
         '''Message passing algorithm to max over terms of all combinations'''
         '''---------------------------------------------------------------'''
         # For theme
+        # In collapsing, two nodes are collapsed into Theme : Object and Preposition
+        best_combination_theme = dict( (slot, tf.zeros((self.batch_size, no_of_theme), dtype=np.int32)) for slot in ['Object', 'Preposition'] )
+
+        # For subject
+        # In collapsing, two nodes are collapsed into Subject : Theme and Event
+        best_combination_subject = dict ( (slot, tf.zeros((self.batch_size, no_of_subject), dtype=np.int32)) for slot in ['Theme', 'Event']) 
+        
+        # (batch_size, #Theme)
+        best_theme_values = logit_t + self.crf_weight * self.A_start_t
+        
+        # (#Object, batch_size, #Theme)
+        o_values = [expand(logit_o[:, o], no_of_theme) + self.crf_weight * self.A_to[:,o]  for o in xrange(no_of_object)]
+        best_theme_values += tf.reduce_max(o_values, 0)
+        
+        # Best value on edge ( Theme -> Object )
+        best_combination_theme['Object'] = tf.cast(tf.argmax(o_values, 0), np.int32)
+        
+        # (#Prep, batch_size, #Theme)
+        p_values = [expand(logit_p[:, p],no_of_theme)  + self.crf_weight * self.A_tp[:,p] for p in xrange(no_of_prep)]
+        best_theme_values += tf.reduce_max(p_values, 0)
+        
+        # Best value on edge ( Theme -> Preposition )
+        best_combination_theme['Preposition'] = tf.cast(tf.argmax(p_values, 0), np.int32)
+        
+        # (batch_size, #Subject)
+        best_subject_values = logit_s
+        
+        # Message passing between Theme and Subject
+        # (#Theme, batch_size, #Subject)
+        t_values = [expand(best_theme_values[:, t], no_of_subject)  + self.crf_weight * self.A_ts[t,:] for t in xrange(no_of_theme)]
+        best_subject_values += tf.reduce_max(t_values, 0)
+        
+        # Best value on edge ( Subject -> Theme )
+        # (batch_size, #Subject)
+        best_combination_subject['Theme'] = tf.cast(tf.argmax(t_values, 0), np.int32)
+        
+        
+        # Message passing between Subject and Verb
+        # (#Event, batch_size, #Subject)
+        e_values = [expand(logit_e[:, e], no_of_subject) + self.crf_weight * self.A_se[:,e] for e in xrange(no_of_event)]
+        # (batch_size, #Subject)
+        best_subject_values += tf.reduce_max(e_values, 0)
+        
+        # Best value on edge ( Subject -> Event )
+        best_combination_subject['Event'] = tf.cast(tf.argmax(e_values, 0), np.int32)
+        
+        """
+        ======================================================
+        Propagate the best combination through message passing
+        ======================================================
+        """
+        best_combination = [tf.zeros((self.batch_size, no_of_subject), dtype=np.int32) for _ in xrange(self.n_labels)]
+        
+        best_combination[0] = expand_first(range(no_of_subject), self.batch_size)
+        best_combination[2] = best_combination_subject['Theme']
+        best_combination[3] = best_combination_subject['Event']
+        
+        """
+        Propagate from Theme to [Object, Preposition]
+        """
+        # (batch_size, #Subject)
+        q = np.array([[i for _ in xrange(no_of_subject)] for i in xrange(self.batch_size)])
+        
+        # (batch_size x #Subject, 2)
+        indices = tf.reshape( tf.transpose( tf.pack ( [q, best_combination_subject['Theme']]), [1, 2, 0] ), [-1, 2]) 
+        
+        for index, slot in [(1, 'Object'), (4, 'Preposition')]:
+            best_combination[index] = gather_2d_to_shape(best_combination_theme[slot], 
+                                                 indices, (self.batch_size, no_of_subject))
+        
+        # Take the best out of all subject values
+        # batch_size
+        best_best_subject_values = tf.argmax(best_subject_values, 1)
+        
+        # (batch_size, 2)
+        # Indices on best_combination[index] should have order of (self.batch_size, #Subject)
+        indices = tf.transpose( tf.pack([range(self.batch_size), best_best_subject_values]))
+        
+        # (batch_size, self.n_labels)
+        out = tf.transpose(tf.pack([gather_2d( best_combination[t], indices ) for t in xrange(self.n_labels)]))
+        
+        
+        # (self.n_labels, batch_size)
+        correct_preds = [tf.equal(out[:,i], self._targets[:,i]) \
+                for i in xrange(self.n_labels)]
+
+        # Return number of correct predictions as well as predictions
+        self._test_op = ([out[:,i] for i in xrange(self.n_labels)], 
+                         [tf.reduce_mean(tf.cast(correct_pred, np.float32)) \
+                         for correct_pred in correct_preds])
+        
+    def make_test_op_2(self):
+        no_of_theme = no_of_subject = no_of_object =  len(role_to_id)
+        no_of_prep = len(prep_to_id)
+        no_of_event = len(event_to_id)
+            
+        logit_s = self.logits[0]
+        logit_o = self.logits[1]
+        logit_t = self.logits[2]
+        logit_e = self.logits[3]
+        logit_p = self.logits[4]
+        
+        '''---------------------------------------------------------------'''
+        '''Message passing algorithm to max over terms of all combinations'''
+        '''---------------------------------------------------------------'''
+        # For theme
         best_combination_theme = [tf.zeros((self.batch_size, no_of_theme), dtype=np.int64) for _ in xrange(self.n_labels)]
 
         # For subject

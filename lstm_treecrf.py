@@ -125,7 +125,17 @@ class LSTM_TREE_CRF(object):
         self._train_op = optimizer.apply_gradients(zip(grads, tvars))
         
     def make_test_op(self):
-        pass
+        # (batch_size, self.n_labels)
+        out = self.tree.predict( self.crf_weight, self.batch_size, self.logits )
+        
+        # (self.n_labels, batch_size)
+        correct_preds = [tf.equal(out[:,i], self._targets[:,i]) \
+                for i in xrange(self.n_labels)]
+
+        # Return number of correct predictions as well as predictions
+        self._test_op = ([out[:,i] for i in xrange(self.n_labels)], 
+                         [tf.reduce_mean(tf.cast(correct_pred, np.float32)) \
+                         for correct_pred in correct_preds])
     
     def assign_lr(self, session, lr_value):
         session.run(tf.assign(self.lr, lr_value))

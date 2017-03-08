@@ -28,8 +28,12 @@ class TestTreeCrf(unittest.TestCase):
         self.assertTrue(self.tree_4.is_tree())
         
     def test_look_for_collapsing_node(self):
-        self.assertEqual( CRFTree.look_for_collapsing_node(self.tree_1.edges), ( "2", ["1", "3", "4"]))
-        self.assertIn( CRFTree.look_for_collapsing_node(self.tree_4.edges), [ ("2", ["1", "3"]), ("7", ["5", "6"]), ("8", ["9", "10"]) ] )
+        self.assertEqual( CRFTree.look_for_collapsing_node(self.tree_1.edges), ( "2", set(["1", "3", "4"]))  )
+        self.assertIn( CRFTree.look_for_collapsing_node(self.tree_4.edges), 
+            [ ("2", set(["1", "3"])), 
+            ("7", set(["5", "6"])), 
+            ("8", set(["9", "10"])) 
+            ] )
         
 if __name__ == '__main__':
     unittest.main()
