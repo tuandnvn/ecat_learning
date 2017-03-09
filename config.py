@@ -54,13 +54,13 @@ class ExplicitConfig(object):
     num_steps = 20          # Divide the data into num_steps segment 
     hidden_size = 200       # the number of LSTM units
     max_epoch = 10          # The number of epochs trained with the initial learning rate
-    max_max_epoch = 250     # Number of running epochs
+    max_max_epoch = 500     # Number of running epochs
     keep_prob = 0.8         # Drop out keep probability, = 1.0 no dropout
     lr_decay = 0.980         # Learning rate decay
     batch_size = 40         # We could actually still use batch_size for convenient
     hop_step = 5            # Hopping between two samples
-    test_epoch = 20         # Test after these many epochs
-    save_epoch = 10
+    test_epoch = 50         # Test after these many epochs
+    save_epoch = 50
     crf_weight = 1
     
     def __init__(self, data_length, label_classes):
