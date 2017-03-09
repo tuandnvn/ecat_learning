@@ -23,18 +23,29 @@ class LSTM_TREE_CRF(object):
         config shoule have:
             config.tree = Tree
         '''
+
         self.tree = config.tree
         self.batch_size = batch_size = config.batch_size
+        self.num_steps = num_steps = config.num_steps
         self.n_input = n_input = config.n_input
-        size = config.hidden_size
+        self.max_grad_norm = config.max_grad_norm
+        self.size = size = config.hidden_size
         self.crf_weight = crf_weight = config.crf_weight
-        self.node_types = config.node_types
-        self.dictionaries = config.dictionaries
+        self.node_types = config.tree.node_types
+
+        # This is actually just the same
+        # self.label_classes is list of dict
+        self.label_classes = label_classes = config.label_classes
+        # self.dictionaries is dict of dict
+        self.dictionaries = config.tree.dictionaries
+
         self.n_labels = len(self.node_types)
         
         # Input data and labels should be set as placeholders
-        self._input_data = tf.placeholder(tf.float32, [batch_size, None, n_input])
+        self._input_data = tf.placeholder(tf.float32, [batch_size, num_steps, n_input])
         self._targets = tf.placeholder(tf.int32, [batch_size, self.n_labels])
+
+        self._debug = []
         
         # self.n_labels cells for self.n_labels outputs
         lstm_cells = [tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias = 0.0, state_is_tuple=True)\
@@ -62,7 +73,7 @@ class LSTM_TREE_CRF(object):
 
             inputs = tf.matmul(inputs, weight) + bias
 
-        inputs = tf.split(0, self._input_data.shape[1], inputs) # num_steps * ( batch_size, size )
+        inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
         
         outputs_and_states = []
         
@@ -86,11 +97,11 @@ class LSTM_TREE_CRF(object):
                    for output_and_state in outputs_and_states]
         
         # self.n_labels x ( batch_size, n_classes )
-        logits = {}
+        self.logits = logits = {}
         
-        for slot in xrange(self.node_types):
+        for slot in self.node_types:
             n_classes = len(self.dictionaries[slot])
-            with tf.variable_scope("output" + str(i)):
+            with tf.variable_scope("output_" + slot):
                 weight = tf.get_variable("weight", [size, n_classes])
                 bias = tf.get_variable("bias", [n_classes])
 
@@ -120,7 +131,7 @@ class LSTM_TREE_CRF(object):
         self._train_op = []
             
         grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars),
-                                          self.config.max_grad_norm)
+                                          self.max_grad_norm)
         optimizer = tf.train.GradientDescentOptimizer(self.lr)
         self._train_op = optimizer.apply_gradients(zip(grads, tvars))
         
@@ -140,6 +151,10 @@ class LSTM_TREE_CRF(object):
     def assign_lr(self, session, lr_value):
         session.run(tf.assign(self.lr, lr_value))
     
+    @property
+    def debug(self):
+        return self._debug
+        
     @property
     def saver(self):
         return self._saver

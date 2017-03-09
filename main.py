@@ -290,14 +290,17 @@ if __name__ == '__main__':
         if use_tree:
             print('-------- Setup m model ---------')
             with tf.variable_scope("model", reuse=None, initializer=initializer):
+                config.tree.initiate_crf()
                 m = LSTM_TREE_CRF(is_training=True, config=config)
                 
             print('-------- Setup m_intermediate_test model ---------')
             with tf.variable_scope("model", reuse=True, initializer=initializer):
+                intermediate_config.tree.initiate_crf()
                 m_intermediate_test = LSTM_TREE_CRF(is_training=False, config=intermediate_config)
                 
             print('-------- Setup mtest model ----------')
             with tf.variable_scope("model", reuse=True, initializer=initializer):
+                eval_config.tree.initiate_crf()
                 mtest = LSTM_TREE_CRF(is_training=False, config=eval_config)
         else:
             print('-------- Setup m model ---------')
@@ -360,7 +363,7 @@ if __name__ == '__main__':
                     
                     if i % config.save_epoch == 0:
                         start_time = time.time()
-                        _model_path = m.saver.save(session, log_dir + "/model.ckpt")
+                        _model_path = m.saver.save(session, model_path)
                         print_and_log("Model saved in file: %s" % _model_path)
                         print_and_log("Time %.3f" % (time.time() - start_time) )
                 except ValueError:
@@ -371,14 +374,14 @@ if __name__ == '__main__':
 #             train_writer.close()
 #             print_and_log("Train writer is closed")
             
-            _model_path = m.saver.save(session, log_dir + "/model.ckpt")
+            _model_path = m.saver.save(session, model_path)
             print_and_log("Model saved in file: %s" % _model_path)
         
         if mode == TEST:
             m.saver.restore(session, model_path)
             print_and_log("Restore model saved in file: %s" % model_path)
         
-        test_writer = tf.summary.FileWriter(os.path.join(log_dir, 'test'))
+#         test_writer = tf.summary.FileWriter(os.path.join(log_dir, 'test'))
         
         print_and_log('--------------TEST--------------')  
         print_and_log('Run model on test data')

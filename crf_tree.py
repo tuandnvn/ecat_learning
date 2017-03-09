@@ -70,6 +70,8 @@ class CRFTree(object):
                         if source in self.dictionaries and target in self.dictionaries:
                             self.crf[sorted_edge] = tf.get_variable("A_" + source + '_' + target, 
                                                         [len(self.dictionaries[source]), len(self.dictionaries[target])])
+                            print sorted_edge
+                            print self.crf[sorted_edge].get_shape()
 
     def is_tree(self):
         '''
@@ -146,7 +148,12 @@ class CRFTree(object):
         # Remove edges on the cloned edges, not from self.edges
         # We will remove until there are no edges left
         cloned_edges = copy.deepcopy( self.edges )
-        cloned_logits = copy.deepcopy( logits )
+        
+        
+        cloned_logits = {}
+        
+        for node_type in logits:
+            cloned_logits[node_type] = logits[node_type]
         
         def recursive_sum_over( edges, logits ):
             '''
@@ -175,18 +182,22 @@ class CRFTree(object):
                     
                     size_target = len(self.dictionaries[collapsed_node])
                     
+                    print 'selected_node', selected_node
+                    print sorted_edge
                     if selected_node == sorted_edge[0]:
                         # Same order
-                        log_edge = tf.reduce_min(crf_weight * A + expand(logit, size_source, axis = 2), 1)
+                        # A will have size (size_source, size_target)
+                        log_edge = tf.reduce_min(crf_weight * tf.transpose(A) + expand(logit, size_source, axis = 2), 1)
                         
-                        log_edge += tf.log(tf.reduce_sum(tf.exp(crf_weight * A +\
+                        log_edge += tf.log(tf.reduce_sum(tf.exp(crf_weight * tf.transpose(A) +\
                                                                 expand(logit, size_source, axis = 2) -\
                                                                 expand(log_edge, size_target, axis = 1) ), 1))
                     else:
                         # Reverse order
-                        log_edge = tf.reduce_min(crf_weight * tf.transpose(A) + expand(logit, size_source, axis = 2), 1)
+                        # A will have size (size_target, size_source)
+                        log_edge = tf.reduce_min(crf_weight * A + expand(logit, size_source, axis = 2), 1)
                         
-                        log_edge += tf.log(tf.reduce_sum(tf.exp(crf_weight * tf.transpose(A) +\
+                        log_edge += tf.log(tf.reduce_sum(tf.exp(crf_weight * A +\
                                                                 expand(logit, size_source, axis = 2) -\
                                                                 expand(log_edge, size_target, axis = 1) ), 1))
                         
@@ -205,7 +216,7 @@ class CRFTree(object):
             else:
                 #There should be only one key in logits, otherwise throw an Error
                 if len(logits) == 1:
-                    remaining_node = logits.values()[0]
+                    remaining_node = logits.keys()[0]
                     
                     # ( #remaining_node, batch_size)
                     logit = tf.transpose(logits[remaining_node])
@@ -245,7 +256,7 @@ class CRFTree(object):
                 # Only count 1 for each edge
                 if (source, target) == sorted_edge:
                     target_id = self.node_type_indices[target]
-                    logit_correct += crf_weight * gather_2d ( self.crf[sorted_edge], tf.tranpose(tf.pack([targets[:, source_id], targets[:, target_id]])))
+                    logit_correct += crf_weight * gather_2d ( self.crf[sorted_edge], tf.transpose(tf.pack([targets[:, source_id], targets[:, target_id]])))
             
             logit_correct += gather_2d(logits[source], tf.transpose(tf.pack([tf.range(batch_size), targets[:, source_id]])))
 
@@ -301,11 +312,11 @@ class CRFTree(object):
                     if selected_node == sorted_edge[0]:
                         # Same order
                         # (batch_size, size_target, size_source)
-                        log_edge = crf_weight * A + expand(logit, size_source, axis = 2)
+                        log_edge = crf_weight * tf.transpose(A) + expand(logit, size_source, axis = 2)
                     else:
                         # Reverse order
                         # (batch_size, size_target, size_source)
-                        log_edge = crf_weight * tf.transpose(A) + expand(logit, size_source, axis = 2)
+                        log_edge = crf_weight * A + expand(logit, size_source, axis = 2)
                     
                     # (batch_size, size_source)
                     best_combinations[collapsed_node] = tf.cast(tf.argmax(log_edge, 1), np.int32)
@@ -324,15 +335,15 @@ class CRFTree(object):
                 return recursive_predict(edges, logits)
             else:
                 if len(logits) == 1:
-                    remaining_node = logits.values()[0]
+                    remaining_node = logits.keys()[0]
                     
                     size_remaining = len(self.dictionaries[remaining_node])
                     
                     """
                     Recalculate best_combinations according to the last node
                     """
-                    recalculated_best_combinations = [tf.zeros((self.batch_size, size_remaining), dtype=np.int32) for _ in xrange(len(self.node_types))]
-                    recalculated_best_combinations[self.node_type_indices[remaining_node]] = expand_first(range(size_remaining), self.batch_size)
+                    recalculated_best_combinations = [tf.zeros((batch_size, size_remaining), dtype=np.int32) for _ in xrange(len(self.node_types))]
+                    recalculated_best_combinations[self.node_type_indices[remaining_node]] = expand_first(range(size_remaining), batch_size)
                     
                     while len(collapse_list) > 0:
                         selected_node, collapsed_nodes = collapse_list.pop()
@@ -342,7 +353,7 @@ class CRFTree(object):
                         Propagate from selected_node to collapsed_nodes
                         """
                         # (batch_size, #Subject)
-                        q = np.array([[i for _ in xrange(size_remaining)] for i in xrange(self.batch_size)])
+                        q = np.array([[i for _ in xrange(size_remaining)] for i in xrange(batch_size)])
                         
                         # (batch_size x #Subject, 2)
                         indices = tf.reshape( tf.transpose( tf.pack ( [q, recalculated_best_combinations[selected_node_index] ]), [1, 2, 0] ), [-1, 2]) 
@@ -350,12 +361,12 @@ class CRFTree(object):
                         for collapsed_node in collapsed_nodes:
                             collapsed_index = self.node_type_indices[collapsed_node]
                             recalculated_best_combinations[collapsed_index] = gather_2d_to_shape(best_combinations[collapsed_node], 
-                                                                 indices, (self.batch_size, size_remaining))
+                                                                 indices, (batch_size, size_remaining))
             
                     # batch_size
                     best_best_values = tf.argmax(logits[remaining_node], 1)
                     
-                    indices = tf.transpose( tf.pack([range(self.batch_size), best_best_values]))
+                    indices = tf.transpose( tf.pack([range(batch_size), best_best_values]))
                     
                     out = tf.transpose(tf.pack([gather_2d( recalculated_best_combinations[t], indices ) for t in xrange(len(self.node_types))]))
                     
@@ -366,6 +377,9 @@ class CRFTree(object):
         # Remove edges on the cloned edges, not from self.edges
         # We will remove until there are no edges left
         cloned_edges = copy.deepcopy( self.edges )
-        cloned_logits = copy.deepcopy( logits )
+        cloned_logits = {}
+        
+        for node_type in logits:
+            cloned_logits[node_type] = logits[node_type]
             
         return recursive_predict (cloned_edges , cloned_logits )
