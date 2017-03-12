@@ -26,6 +26,7 @@ class LSTM_TREE_CRF(object):
 
         self.tree = config.tree
         self.batch_size = batch_size = config.batch_size
+        # Maximum number of steps in each data sequence
         self.num_steps = num_steps = config.num_steps
         self.n_input = n_input = config.n_input
         self.max_grad_norm = config.max_grad_norm
@@ -35,7 +36,7 @@ class LSTM_TREE_CRF(object):
 
         # This is actually just the same
         # self.label_classes is list of dict
-        self.label_classes = label_classes = config.label_classes
+        self.label_classes =  config.label_classes
         # self.dictionaries is dict of dict
         self.dictionaries = config.tree.dictionaries
 
@@ -44,6 +45,9 @@ class LSTM_TREE_CRF(object):
         # Input data and labels should be set as placeholders
         self._input_data = tf.placeholder(tf.float32, [batch_size, num_steps, n_input])
         self._targets = tf.placeholder(tf.int32, [batch_size, self.n_labels])
+        
+        # Length for self._input_data
+        self._input_lengths = tf.placeholder(tf.int32, [batch_size] )
 
         self._debug = []
         
@@ -64,33 +68,52 @@ class LSTM_TREE_CRF(object):
         self._initial_state = [cell.zero_state(batch_size, tf.float32) for cell in cells]
         
         # Transformation of input to a list of num_steps data points
-        inputs = tf.transpose(self._input_data, [1, 0, 2]) #(num_steps, batch_size, n_input)
-        inputs = tf.reshape(inputs, [-1, n_input]) # (num_steps * batch_size, n_input)
+        # For tf.nn.rnn
+        # inputs = tf.transpose(self._input_data, [1, 0, 2]) #(num_steps, batch_size, n_input)
+        inputs = tf.reshape(self._input_data, [-1, n_input]) # (batch_size * num_steps, n_input)
         
         with tf.variable_scope("hidden"):
             weight = tf.get_variable("weight", [n_input, size])
             bias = tf.get_variable("bias", [size])
-
+            
+            # (batch_size * num_steps, size)
             inputs = tf.matmul(inputs, weight) + bias
-
-        inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
+        
+        
+        inputs = tf.reshape(inputs, (-1, num_steps, size)) # (batch_size, num_steps, size)
+        # For tf.nn.rnn
+        # inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
         
         outputs_and_states = []
         
         # A list of n_labels values
         # Each value is (output, state)
-        # output is of size:   num_steps * ( batch_size, size )
+        # output is of size:  ( batch_size, num_steps, size )
         # state is of size:   ( batch_size, cell.state_size )
         for i in xrange(self.n_labels):
             with tf.variable_scope("lstm" + str(i)):
-                output_and_state = tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])
+                # Old code, use tf.nn.rnn
+                # output_and_state = tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])
+                
+                # New code, use tf.nn.dynamic_rnn
+                output_and_state = tf.nn.dynamic_rnn(cells[i], inputs, dtype=tf.float32, initial_state = self._initial_state[i], 
+                                                     sequence_length = self._input_lengths)
                 outputs_and_states.append(output_and_state)
                 
         
         
         # n_labels x ( batch_size, size )
-        outputs = [output_and_state[0][-1]\
+        # For tf.nn.rnn
+        # outputs = [output_and_state[0][-1]\
+        #           for output_and_state in outputs_and_states]
+        
+        # n_labels x ( num_steps, batch_size, size )
+        outputs = [tf.tranpose(output_and_state[0], [1, 0, 2])  
                    for output_and_state in outputs_and_states]
+        # Last step
+        # n_labels x ( batch_size, size )
+        outputs = [tf.gather(output, int(output.get_shape()[0]) - 1) 
+                   for output in outputs]
         
         # n_labels x ( batch_size, cell.state_size )
         self._final_state = [output_and_state[1]\
@@ -111,7 +134,7 @@ class LSTM_TREE_CRF(object):
             # logits
             logits[slot] = logit
         
-        log_sum = self.tree.sum_over(crf_weight, batch_size, logits)
+        log_sum = self.tree.sum_over(crf_weight, logits)
         
         logit_correct = self.tree.calculate_logit_correct(crf_weight, batch_size, logits, self._targets)
         

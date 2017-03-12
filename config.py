@@ -60,7 +60,7 @@ class ExplicitConfig(object):
     batch_size = 40         # We could actually still use batch_size for convenient
     hop_step = 5            # Hopping between two samples
     test_epoch = 20         # Test after these many epochs
-    save_epoch = 10
+    save_epoch = 100
     crf_weight = 1
     
     def __init__(self, data_length, label_classes):
