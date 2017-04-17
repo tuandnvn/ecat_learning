@@ -10,6 +10,11 @@ import copy
 import numpy as np
 import tensorflow as tf
 
+try:
+    from tensorflow.nn.rnn_cell import BasicLSTMCell, DropoutWrapper, MultiRNNCell
+except:
+    from tensorflow.contrib.rnn import BasicLSTMCell, DropoutWrapper, MultiRNNCell
+
 class LSTM_TREE_CRF(object):
     '''
     '''
@@ -48,14 +53,14 @@ class LSTM_TREE_CRF(object):
         self._debug = []
         
         # self.n_labels cells for self.n_labels outputs
-        lstm_cells = [tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias = 0.0, state_is_tuple=True)\
+        lstm_cells = [BasicLSTMCell(size, forget_bias = 0.0, state_is_tuple=True)\
                       for _ in xrange(self.n_labels)]
 
         # DropoutWrapper is a decorator that adds Dropout functionality
         if is_training and config.keep_prob < 1:
-            lstm_cells = [tf.nn.rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)\
+            lstm_cells = [DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)\
                               for lstm_cell in lstm_cells]
-        cells = [tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)\
+        cells = [MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)\
                  for lstm_cell in lstm_cells]
         
         # Initial states of the cells
@@ -73,7 +78,7 @@ class LSTM_TREE_CRF(object):
 
             inputs = tf.matmul(inputs, weight) + bias
 
-        inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
+        inputs = tf.split( int(0), num_steps, inputs) # num_steps * ( batch_size, size )
         
         outputs_and_states = []
         
