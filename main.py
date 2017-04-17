@@ -27,7 +27,7 @@ from generate_utils import generate_data, turn_to_intermediate_data, gothrough, 
 from lstm_crf_explicit import LSTM_CRF_Exp
 from lstm_treecrf import LSTM_TREE_CRF
 import numpy as np
-from read_utils import read_project_data
+from read_utils import read_project_data, read_pca_features, 
 import tensorflow as tf
 from utils import label_classes, num_labels, from_id_labels_to_str_labels
 
@@ -149,7 +149,11 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
             print_and_log(confusion_matrixs[4])
         
     return np.exp(costs / cost_iters)
-    
+
+RAW = 'raw'
+PCAS = 'pcas'
+QSR = 'qsr'
+
 if __name__ == '__main__':
     # ========================================================================
     # ========================================================================
@@ -164,7 +168,13 @@ if __name__ == '__main__':
     
     parser.add_argument('-r', '--tree',  action='store_true',
                                 help = "Whether to use the general tree LSTM-CRF model. By default, the explicit version is used." )
-    
+
+    parser.add_argument('-f', '--feature',  action='store',
+                                help = "Choose which feature to extract. Pick between RAW, PCAS and QSR. Default is RAW." )
+
+
+
+
     args = parser.parse_args()
     
     mode = TRAIN
@@ -174,6 +184,8 @@ if __name__ == '__main__':
     model_path = args.model
     
     use_tree = args.tree
+
+    feature_type = args.feature
     
     if mode == TRAIN:
         current_time = datetime.datetime.now()
@@ -198,17 +210,40 @@ if __name__ == '__main__':
         else:
             sys.exit("learning.py -t -m model_path")
 
+    if not feature_type:
+        feature_type = RAW
+    else:
+        feature_type = feature_type.lower() 
+
+    if feature_type not in [RAW, PCAS, QSR]:
+        sys.exit("Feature type need to be in the set (raw, pcas, qsr)")
+
     
     # ========================================================================
     # ========================================================================
     # =============================READING INPUT =============================
 
-    SIMPLE_SPLIT = 'train_test_split.pkl'
+    RAW_SPLIT = 'train_test_split.pkl'
+    PCAS_SPLIT = 'train_test_split_pcas.pkl'
+    QSR_SPLIT = 'train_test_split_qsr.pkl'
     
-    if os.path.isfile(SIMPLE_SPLIT) :
+    SPLIT = None
+    read_method = None
+
+    if feature_type == RAW:
+        SPLIT = RAW_SPLIT
+        read_method = read_project_data
+    else if feature_type == PCAS:
+        SPLIT = PCAS_SPLIT
+        read_method = read_pca_features
+    else if feature_type == QSR:
+        SPLIT = QSR_SPLIT
+        read_method = read_qsr_features
+
+    if os.path.isfile(SPLIT) :
         # Load the file
-        logging.info("Load file into training and testing data sets " + SIMPLE_SPLIT)
-        with open(SIMPLE_SPLIT, 'rb') as f:
+        logging.info("Load file into training and testing data sets " + SPLIT)
+        with open(SPLIT, 'rb') as f:
             t = pickle.load(f)
             train = t['train']
             test = t['test']
@@ -216,11 +251,11 @@ if __name__ == '__main__':
         data_length = 63
     else:
         logging.info("Read training and testing data sets from data directory ")
-        data_length, project_data = read_project_data()
+        data_length, project_data = read_method()
         print("data_length " + str(data_length))
         train, test = generate_data(project_data, Simple_Train_Test_Config())
 
-        with open(SIMPLE_SPLIT, 'wb') as f:
+        with open(SPLIT, 'wb') as f:
             pickle.dump({'train': train,
                         'test': test}, 
                         f, pickle.HIGHEST_PROTOCOL)
