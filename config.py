@@ -59,8 +59,8 @@ class ExplicitConfig(object):
     lr_decay = 0.980         # Learning rate decay
     batch_size = 40         # We could actually still use batch_size for convenient
     hop_step = 5            # Hopping between two samples
-    test_epoch = 50         # Test after these many epochs
-    save_epoch = 50
+    test_epoch = 20         # Test after these many epochs
+    save_epoch = 100
     crf_weight = 1
     
     def __init__(self, data_length, label_classes):
