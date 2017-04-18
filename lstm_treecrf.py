@@ -113,7 +113,7 @@ class LSTM_TREE_CRF(object):
         #           for output_and_state in outputs_and_states]
         
         # n_labels x ( num_steps, batch_size, size )
-        outputs = [tf.tranpose(output_and_state[0], [1, 0, 2])  
+        outputs = [tf.transpose(output_and_state[0], [1, 0, 2])  
                    for output_and_state in outputs_and_states]
         # Last step
         # n_labels x ( batch_size, size )

@@ -16,6 +16,10 @@ import numpy as np
 import tensorflow as tf
 from utils import role_to_id, prep_to_id, event_to_id, DEVICE, TEST_DEVICE
 
+try:
+    from tensorflow.nn.rnn_cell import BasicLSTMCell, DropoutWrapper, MultiRNNCell
+except:
+    from tensorflow.contrib.rnn import BasicLSTMCell, DropoutWrapper, MultiRNNCell
 
 def gather_2d(params, indices):
     # only for two dim now
@@ -41,7 +45,7 @@ def expand( tensor, size, axis = 1 ):
 
 # x -> (size, x)
 def expand_first( tensor, size ):
-    return tf.pack( [tensor for _ in xrange(size)] )
+    return tf.stack( [tensor for _ in xrange(size)] )
           
 class LSTM_CRF_Exp(object):
     '''
@@ -91,14 +95,14 @@ class LSTM_CRF_Exp(object):
         self._targets = tf.placeholder(tf.int32, [batch_size, self.n_labels])
         
         # self.n_labels cells for self.n_labels outputs
-        lstm_cells = [tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias = 0.0, state_is_tuple=True)\
+        lstm_cells = [BasicLSTMCell(size, forget_bias = 0.0, state_is_tuple=True)\
                       for _ in xrange(self.n_labels)]
 
         # DropoutWrapper is a decorator that adds Dropout functionality
         if is_training and config.keep_prob < 1:
-            lstm_cells = [tf.nn.rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)\
+            lstm_cells = [DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)\
                               for lstm_cell in lstm_cells]
-        cells = [tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)\
+        cells = [MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)\
                  for lstm_cell in lstm_cells]
         
         # Initial states of the cells
@@ -116,7 +120,9 @@ class LSTM_CRF_Exp(object):
 
             inputs = tf.matmul(inputs, weight) + bias
 
-        inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
+        inputs = tf.reshape(inputs, (-1, num_steps, size)) # (batch_size, num_steps, size)
+        # For tf.nn.rnn
+        # inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
         
         outputs_and_states = []
         
@@ -126,13 +132,22 @@ class LSTM_CRF_Exp(object):
         # state is of size:   ( batch_size, cell.state_size )
         for i in xrange(self.n_labels):
             with tf.variable_scope("lstm" + str(i)):
-                output_and_state = tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])
+                # output_and_state = tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])
+                output_and_state = tf.nn.dynamic_rnn(cells[i], inputs, dtype=tf.float32, initial_state = self._initial_state[i])
                 outputs_and_states.append(output_and_state)
         
         
         # n_labels x ( batch_size, size )
-        outputs = [output_and_state[0][-1]\
+        #outputs = [output_and_state[0][-1]\
+        #           for output_and_state in outputs_and_states]
+
+        # n_labels x ( num_steps, batch_size, size )
+        outputs = [tf.transpose(output_and_state[0], [1, 0, 2])  
                    for output_and_state in outputs_and_states]
+        # Last step
+        # n_labels x ( batch_size, size )
+        outputs = [tf.gather(output, int(output.get_shape()[0]) - 1) 
+                   for output in outputs]
         
         # n_labels x ( batch_size, cell.state_size )
         self._final_state = [output_and_state[1]\
@@ -253,15 +268,15 @@ class LSTM_CRF_Exp(object):
 
         logit_correct = \
             crf_weight * tf.gather(A_start_t, correct_t) +\
-            crf_weight * gather_2d(A_to, tf.transpose(tf.pack([correct_t, correct_o]))) +\
-            crf_weight * gather_2d(A_tp, tf.transpose(tf.pack([correct_t, correct_p]))) +\
-            crf_weight * gather_2d(A_ts, tf.transpose(tf.pack([correct_t, correct_s]))) +\
-            crf_weight * gather_2d(A_se, tf.transpose(tf.pack([correct_s, correct_e]))) +\
-            gather_2d(logit_t, tf.transpose(tf.pack([tf.range(batch_size), correct_t]))) +\
-            gather_2d(logit_o, tf.transpose(tf.pack([tf.range(batch_size), correct_o]))) +\
-            gather_2d(logit_p, tf.transpose(tf.pack([tf.range(batch_size), correct_p]))) +\
-            gather_2d(logit_e, tf.transpose(tf.pack([tf.range(batch_size), correct_e]))) +\
-            gather_2d(logit_s, tf.transpose(tf.pack([tf.range(batch_size), correct_s])))
+            crf_weight * gather_2d(A_to, tf.transpose(tf.stack([correct_t, correct_o]))) +\
+            crf_weight * gather_2d(A_tp, tf.transpose(tf.stack([correct_t, correct_p]))) +\
+            crf_weight * gather_2d(A_ts, tf.transpose(tf.stack([correct_t, correct_s]))) +\
+            crf_weight * gather_2d(A_se, tf.transpose(tf.stack([correct_s, correct_e]))) +\
+            gather_2d(logit_t, tf.transpose(tf.stack([tf.range(batch_size), correct_t]))) +\
+            gather_2d(logit_o, tf.transpose(tf.stack([tf.range(batch_size), correct_o]))) +\
+            gather_2d(logit_p, tf.transpose(tf.stack([tf.range(batch_size), correct_p]))) +\
+            gather_2d(logit_e, tf.transpose(tf.stack([tf.range(batch_size), correct_e]))) +\
+            gather_2d(logit_s, tf.transpose(tf.stack([tf.range(batch_size), correct_s])))
             
         self._cost = tf.reduce_mean(log_sum - logit_correct)    
         
@@ -362,7 +377,7 @@ class LSTM_CRF_Exp(object):
         q = np.array([[i for _ in xrange(no_of_subject)] for i in xrange(self.batch_size)])
         
         # (batch_size x #Subject, 2)
-        indices = tf.reshape( tf.transpose( tf.pack ( [q, best_combination_subject['Theme']]), [1, 2, 0] ), [-1, 2]) 
+        indices = tf.reshape( tf.transpose( tf.stack ( [q, best_combination_subject['Theme']]), [1, 2, 0] ), [-1, 2]) 
         
         for index, slot in [(1, 'Object'), (4, 'Preposition')]:
             best_combination[index] = gather_2d_to_shape(best_combination_theme[slot], 
@@ -374,10 +389,10 @@ class LSTM_CRF_Exp(object):
         
         # (batch_size, 2)
         # Indices on best_combination[index] should have order of (self.batch_size, #Subject)
-        indices = tf.transpose( tf.pack([range(self.batch_size), best_best_subject_values]))
+        indices = tf.transpose( tf.stack([range(self.batch_size), best_best_subject_values]))
         
         # (batch_size, self.n_labels)
-        out = tf.transpose(tf.pack([gather_2d( best_combination[t], indices ) for t in xrange(self.n_labels)]))
+        out = tf.transpose(tf.stack([gather_2d( best_combination[t], indices ) for t in xrange(self.n_labels)]))
         
         
         # (self.n_labels, batch_size)

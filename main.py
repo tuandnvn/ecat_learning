@@ -27,7 +27,7 @@ from generate_utils import generate_data, turn_to_intermediate_data, gothrough, 
 from lstm_crf_explicit import LSTM_CRF_Exp
 from lstm_treecrf import LSTM_TREE_CRF
 import numpy as np
-from read_utils import read_project_data, read_pca_features, 
+from read_utils import read_project_data, read_pca_features
 import tensorflow as tf
 from utils import label_classes, num_labels, from_id_labels_to_str_labels
 
@@ -233,10 +233,12 @@ if __name__ == '__main__':
     if feature_type == RAW:
         SPLIT = RAW_SPLIT
         read_method = read_project_data
-    else if feature_type == PCAS:
+        data_length = 63
+    elif feature_type == PCAS:
         SPLIT = PCAS_SPLIT
         read_method = read_pca_features
-    else if feature_type == QSR:
+        data_length = 20
+    elif feature_type == QSR:
         SPLIT = QSR_SPLIT
         read_method = read_qsr_features
 
@@ -247,8 +249,6 @@ if __name__ == '__main__':
             t = pickle.load(f)
             train = t['train']
             test = t['test']
-
-        data_length = 63
     else:
         logging.info("Read training and testing data sets from data directory ")
         data_length, project_data = read_method()
