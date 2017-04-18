@@ -256,7 +256,9 @@ class CRFTree(object):
                 # Only count 1 for each edge
                 if (source, target) == sorted_edge:
                     target_id = self.node_type_indices[target]
-                    logit_correct += crf_weight * gather_2d ( self.crf[sorted_edge], tf.transpose(tf.pack([targets[:, source_id], targets[:, target_id]])))
+                    target_src = targets[:, source_id]
+                    target_target = targets[:, target_id]
+                    logit_correct += crf_weight * gather_2d ( self.crf[sorted_edge], tf.transpose(tf.pack([target_src, target_target])))
             
             logit_correct += gather_2d(logits[source], tf.transpose(tf.pack([tf.range(batch_size), targets[:, source_id]])))
 

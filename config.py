@@ -27,7 +27,7 @@ class Simple_Train_Test_Config(object):
                           'selfslideacross', 'selfslideto']
     session_training_percentage = (0, 0.6)
     session_testing_percentage = (0.6, 1)
-    double_training = True
+    double_training = False
 
 
 '''Only train on a subset of projects
