@@ -94,7 +94,9 @@ def read_pca_features():
 	_, project_data = read_project_data()
 
 	for project_name in project_data:
+		print project_name
 		for session_data in project_data[project_name]:
+			print '-----------------------------------'
 			point_datas = session_data[SESSION_DATA]
 
 			new_session_datas = []
@@ -135,13 +137,14 @@ def read_pca_features():
 
 				point_data = np.concatenate( new_session_data )
 
-				# Should be 40
+				# Should be 20
 				if data_length == None:
                     data_length = point_data.shape[0]
 
 				new_session_datas.append( point_data )
 
 			session_data[SESSION_DATA] = new_session_datas
+			print session_data[SESSION_DATA]
 
 	return data_length, project_data
 
@@ -152,6 +155,7 @@ def read_qsr_features():
 	for file_name in glob.glob(os.path.join(DATA_DIR, '*.txt')):
 		for session_element in doc.findall('session'):
 			frame_elements = session_element.findall('data/frame')
+
 
 
 
