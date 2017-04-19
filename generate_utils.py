@@ -23,10 +23,9 @@ testing_data: similar as project_data
 import random
 
 import numpy as np
-from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels
+from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels, RAW, PCAS, QSR
 
-
-def generate_data(project_data, config) :
+def generate_data(project_data, config, split_method = RAW) :
     """
     Splitting data set based on config
     
@@ -62,9 +61,34 @@ def generate_data(project_data, config) :
                 reversed_session_data[SESSION_EVENTS] = []
 
                 for point_data in session_data[SESSION_DATA]:
-                    reversed_point_data = point_data[:39]
-                    reversed_point_data += point_data[51:63]
-                    reversed_point_data += point_data[39:51]
+                    if split_method == RAW:
+                        reversed_point_data = point_data[:39]
+                        reversed_point_data += point_data[51:63]
+                        reversed_point_data += point_data[39:51]
+                    elif split_method == PCAS:
+                        reversed_point_data = point_data[:6]
+                        # Object centroid swap
+                        reversed_point_data += point_data[8:10] 
+                        reversed_point_data += point_data[6:8]
+                        # Object corners swap
+                        reversed_point_data += point_data[14:18] 
+                        reversed_point_data += point_data[10:14]
+                    elif split_method == QSR:
+                        reversed_point_data = point_data[:4]
+                        # Hands to objects feature swap
+                        reversed_point_data += point_data[8:12] 
+                        reversed_point_data += point_data[4:8]
+
+                        # Centroid direction and distance difference is symmetric
+                        reversed_point_data += point_data[12:14]
+
+                        # Object corners swap
+                        reversed_point_data += point_data[16:18] 
+                        reversed_point_data += point_data[14:16]
+
+                        reversed_point_data += point_data[18:19]
+                        reversed_point_data += point_data[20:21] 
+                        reversed_point_data += point_data[19:20]
 
                     reversed_session_data[SESSION_DATA].append(reversed_point_data)
 

@@ -120,9 +120,9 @@ class LSTM_CRF_Exp(object):
 
             inputs = tf.matmul(inputs, weight) + bias
 
-        inputs = tf.reshape(inputs, (-1, num_steps, size)) # (batch_size, num_steps, size)
+        # inputs = tf.reshape(inputs, (-1, num_steps, size)) # (batch_size, num_steps, size)
         # For tf.nn.rnn
-        # inputs = tf.split(0, num_steps, inputs) # num_steps * ( batch_size, size )
+        inputs = tf.split(inputs, num_steps, axis = 0) # num_steps * ( batch_size, size )
         
         outputs_and_states = []
         
@@ -133,21 +133,23 @@ class LSTM_CRF_Exp(object):
         for i in xrange(self.n_labels):
             with tf.variable_scope("lstm" + str(i)):
                 # output_and_state = tf.nn.rnn(cells[i], inputs, initial_state = self._initial_state[i])
-                output_and_state = tf.nn.dynamic_rnn(cells[i], inputs, dtype=tf.float32, initial_state = self._initial_state[i])
+                output_and_state =  tf.contrib.rnn.static_rnn (cells[i], inputs, initial_state = self._initial_state[i])
+                # output_and_state = tf.nn.dynamic_rnn(cells[i], inputs, dtype=tf.float32, initial_state = self._initial_state[i])
                 outputs_and_states.append(output_and_state)
         
         
         # n_labels x ( batch_size, size )
-        #outputs = [output_and_state[0][-1]\
-        #           for output_and_state in outputs_and_states]
+        outputs = [output_and_state[0][-1]\
+                   for output_and_state in outputs_and_states]
 
         # n_labels x ( num_steps, batch_size, size )
-        outputs = [tf.transpose(output_and_state[0], [1, 0, 2])  
-                   for output_and_state in outputs_and_states]
+        # outputs = [tf.transpose(output_and_state[0], [1, 0, 2])  
+        #           for output_and_state in outputs_and_states]
+        
         # Last step
         # n_labels x ( batch_size, size )
-        outputs = [tf.gather(output, int(output.get_shape()[0]) - 1) 
-                   for output in outputs]
+        #outputs = [tf.gather(output, int(output.get_shape()[0]) - 1) 
+        #           for output in outputs]
         
         # n_labels x ( batch_size, cell.state_size )
         self._final_state = [output_and_state[1]\
