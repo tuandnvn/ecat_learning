@@ -17,6 +17,7 @@ import random
 import shutil
 import sys
 import time
+import glob
 
 import argparse
 from sklearn.metrics.classification import confusion_matrix
@@ -27,9 +28,9 @@ from generate_utils import generate_data, turn_to_intermediate_data, gothrough, 
 from lstm_crf_explicit import LSTM_CRF_Exp
 from lstm_treecrf import LSTM_TREE_CRF
 import numpy as np
-from read_utils import read_project_data, read_pca_features
+from read_utils import read_project_data, read_pca_features, read_qsr_features
 import tensorflow as tf
-from utils import label_classes, num_labels, from_id_labels_to_str_labels
+from utils import label_classes, num_labels, from_id_labels_to_str_labels, RAW, PCAS, QSR
 
 
 # default mode is to train and test at the same time
@@ -150,10 +151,6 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
         
     return np.exp(costs / cost_iters)
 
-RAW = 'raw'
-PCAS = 'pcas'
-QSR = 'qsr'
-
 if __name__ == '__main__':
     # ========================================================================
     # ========================================================================
@@ -196,10 +193,20 @@ if __name__ == '__main__':
             
         print('Train and output into directory ' + log_dir)
         os.makedirs(log_dir)
+
+        copy_code_dir = os.path.join( log_dir, 'code') 
+        os.makedirs(copy_code_dir)
+
         logging.basicConfig(filename = os.path.join(log_dir, 'logs.log'),level=logging.DEBUG)
         
         # Copy the current executed py file to log (To make sure we can replicate the experiment with the same code)
-        shutil.copy(os.path.realpath(__file__), log_dir)
+        # shutil.copy(os.path.realpath(__file__), log_dir)
+
+        code_dir = os.path.dirname(os.path.realpath(__file__))
+
+        for f in glob.glob(os.path.join(code_dir, '*.py')):
+            # Copy the current executed py file to log (To make sure we can replicate the experiment with the same code)
+            shutil.copy(f, copy_code_dir)
         
         if not model_path:
             model_path = os.path.join(log_dir, "model.ckpt")
@@ -237,10 +244,11 @@ if __name__ == '__main__':
     elif feature_type == PCAS:
         SPLIT = PCAS_SPLIT
         read_method = read_pca_features
-        data_length = 20
+        data_length = 18
     elif feature_type == QSR:
         SPLIT = QSR_SPLIT
         read_method = read_qsr_features
+        data_length = 21
 
     if os.path.isfile(SPLIT) :
         # Load the file
@@ -253,7 +261,7 @@ if __name__ == '__main__':
         logging.info("Read training and testing data sets from data directory ")
         data_length, project_data = read_method()
         print("data_length " + str(data_length))
-        train, test = generate_data(project_data, Simple_Train_Test_Config())
+        train, test = generate_data(project_data, Simple_Train_Test_Config(), feature_type)
 
         with open(SPLIT, 'wb') as f:
             pickle.dump({'train': train,

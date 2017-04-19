@@ -27,7 +27,7 @@ class Simple_Train_Test_Config(object):
                           'selfslideacross', 'selfslideto']
     session_training_percentage = (0, 0.6)
     session_testing_percentage = (0.6, 1)
-    double_training = False
+    double_training = True
 
 
 '''Only train on a subset of projects
@@ -50,17 +50,17 @@ class ExplicitConfig(object):
     learning_rate = 0.5     # Set this value higher without norm clipping
                             # might make the cost explodes
     max_grad_norm = 5       # The maximum permissible norm of the gradient
-    num_layers = 1          # Number of LSTM layers
+    num_layers = 2          # Number of LSTM layers
     num_steps = 20          # Divide the data into num_steps segment 
     hidden_size = 200       # the number of LSTM units
     max_epoch = 10          # The number of epochs trained with the initial learning rate
-    max_max_epoch = 500     # Number of running epochs
+    max_max_epoch = 201     # Number of running epochs
     keep_prob = 0.8         # Drop out keep probability, = 1.0 no dropout
-    lr_decay = 0.980         # Learning rate decay
-    batch_size = 40         # We could actually still use batch_size for convenient
+    lr_decay = 0.950         # Learning rate decay
+    batch_size = 80         # We could actually still use batch_size for convenient
     hop_step = 5            # Hopping between two samples
     test_epoch = 20         # Test after these many epochs
-    save_epoch = 100
+    save_epoch = 40
     crf_weight = 1
     
     def __init__(self, data_length, label_classes):
