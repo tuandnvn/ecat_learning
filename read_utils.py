@@ -244,12 +244,16 @@ def read_pca_features():
 
 cdid = dict( (u, i) for (i, u) in enumerate( ['n', 'nw', 'w', 'sw', 's', 'se', 'e', 'ne', 'eq'] ))
 mosd = dict( (u, i) for (i, u) in enumerate( ['s', 'm'] ))
+qtcc_relations = dict( (u, i) for (i, u) in enumerate( ['-', '0', '+'] ))
 
 def cardir_index ( cardir ):
     return cdid [cardir]
 
 def mos_index ( mos ):
     return mosd [mos]
+
+def qtcc_index ( qtcc_relation ):
+    return qtcc_relations [qtcc_relation] - 1
 
 def turn_response_to_features(keys, qsrlib_response_message):
     feature_chain = []
@@ -269,28 +273,43 @@ def turn_response_to_features(keys, qsrlib_response_message):
                 if 'mos' in v.qsr:
                     f = v.qsr['mos'] 
                     features.append(mos_index(f))
-                
+        # Just to separate qtccs at the end of feature vectors
+        
+        for k in keys:
+            if k in qsrlib_response_message.qsrs.trace[t].qsrs:
+                v = qsrlib_response_message.qsrs.trace[t].qsrs[k]
+                if 'qtccs' in v.qsr:
+                    fs = v.qsr['qtccs']
+                    features += [qtcc_index(f) for f  in fs.split(',')]
+        
+        # print features
         feature_chain.append(features)
     
     if len(feature_chain) == 0:
         return feature_chain
 
-    # The first frame doesn't has dyadic relation
-    feature_chain[0] += [0, 0, 0]
+    # The first frame doesn't has mos and qtcc relations
+    feature_chain[0] += [0, 0, 0, 0, 0, 0, 0]
     
-    feature_chain = [ [feature_chain[t + 1][i] - feature_chain[t][i] for i in xrange(len(feature_chain[0])) ]
-                  for t in xrange(len(feature_chain) - 1)]
+    diff_feature_chain = [ [feature_chain[t + 1][i] - feature_chain[t][i] 
+                            for i in xrange(len(feature_chain[0]) - 7) ] + \
+                          [feature_chain[t][i] for i in xrange(len(feature_chain[0]) - 7, len(feature_chain[0]))]
+                    for t in xrange(len(feature_chain) - 1)]
     
-    feature_chain = [[0 for i in xrange(len(feature_chain[0]))]] +  feature_chain
-    return feature_chain
+    diff_feature_chain = [[0 for i in xrange(len(feature_chain[0]))]] +  diff_feature_chain
+
+    # Concatenate features
+    # feature_chain = [feature_chain[i] + diff_feature_chain[i] for i in xrange(len(feature_chain))]
+
+    return diff_feature_chain
         
 
 def qsr_feature_extractor ( qsrlib, session_data ):
     '''
     List of features from qsr
 
-    21 features
-    
+    25 features
+
     ('body', 'left_hand') - cardir_diff, argd_diff
     ('body', 'right_hand') - cardir_diff, argd_diff 
     ('left_hand', 'o1_centroid') - cardir_diff, argd_diff 
@@ -303,7 +322,9 @@ def qsr_feature_extractor ( qsrlib, session_data ):
     'body' - mos
     'o1_centroid' - mos
     'o2_centroid' - mos
+    ('o1_centroid', 'o2_centroid') - qtccs features
     '''
+
     len_data = len(session_data)
     # body centroid
     body_centroid = [Object_State(name="body", timestamp=i, x=session_data[i][0], y=session_data[i][1], width=0.1, length=0.1) 
@@ -339,6 +360,8 @@ def qsr_feature_extractor ( qsrlib, session_data ):
     o2_corner2 = [Object_State(name="o2_corner2", timestamp=i, x=session_data[i][16], y=session_data[i][17], width=0.1, length=0.1) 
           for i in xrange(len_data)]
 
+    
+
     world = World_Trace()
     world.add_object_state_series(body_centroid)
     world.add_object_state_series(left_hand)
@@ -360,17 +383,26 @@ def qsr_feature_extractor ( qsrlib, session_data ):
     
     interest_mos_elements = ['body', 'o1_centroid', 'o2_centroid']
     
-    qsrlib_request_message = QSRlib_Request_Message(which_qsr=['cardir', 'mos', 'argd'], input_data=world, 
+    interest_cctcs_pair_keys = [('o1_centroid', 'o2_centroid')]
+    
+    qsrlib_request_message = QSRlib_Request_Message(which_qsr=['cardir', 'mos', 'argd', 'qtccs'], input_data=world, 
                     dynamic_args = {'cardir': {'qsrs_for': interest_cardir_pairs},
                                     'mos' : {'qsrs_for': interest_mos_elements, 'quantisation_factor': 0.005},
                                     'argd': {'qsrs_for': interest_argd_pairs, 
-                                            'qsr_relations_and_values' : dict(("" + str(i), i * 1.0 / 20) for i in xrange(20)) }})
+                                            'qsr_relations_and_values' : dict(("" + str(i), i * 1.0 / 20) for i in xrange(20)) },
+                                    'qtccs': {'qsrs_for': interest_cctcs_pair_keys, 
+                                              'quantisation_factor': 0.001, 'angle_quantisation_factor' : np.pi / 5,
+                                              'validate': False, 'no_collapse': True
+                                   }})
     # request your QSRs
-    qsrlib_response_message = qsrlib.request_qsrs(req_msg=qsrlib_request_message)
-
-    # pretty_print_world_qsr_trace(['cardir', 'mos', 'argd'], qsrlib_response_message)
-    
-    return turn_response_to_features(interest_argd_pair_keys + interest_mos_elements, qsrlib_response_message)
+    try:
+        # pretty_print_world_qsr_trace(['cardir', 'mos', 'argd', 'qtccs'], qsrlib_response_message)
+        qsrlib_response_message = qsrlib.request_qsrs(req_msg=qsrlib_request_message)
+        return turn_response_to_features(interest_argd_pair_keys + interest_mos_elements, qsrlib_response_message)
+    except ValueError, e:
+        print e
+        print 'Problem in data of length ' + str(len_data)
+        return []
 
 def read_qsr_features():
     '''

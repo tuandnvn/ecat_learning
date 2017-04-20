@@ -47,20 +47,20 @@ class Partial_Train_Test_Config(object):
     
 class ExplicitConfig(object):
     init_scale = 0.1
-    learning_rate = 0.5     # Set this value higher without norm clipping
+    learning_rate = 0.2     # Set this value higher without norm clipping
                             # might make the cost explodes
     max_grad_norm = 5       # The maximum permissible norm of the gradient
     num_layers = 2          # Number of LSTM layers
     num_steps = 20          # Divide the data into num_steps segment 
-    hidden_size = 200       # the number of LSTM units
+    hidden_size = 400       # the number of LSTM units
     max_epoch = 10          # The number of epochs trained with the initial learning rate
-    max_max_epoch = 201     # Number of running epochs
-    keep_prob = 0.8         # Drop out keep probability, = 1.0 no dropout
+    max_max_epoch = 161     # Number of running epochs
+    keep_prob = 0.6         # Drop out keep probability, = 1.0 no dropout
     lr_decay = 0.950         # Learning rate decay
     batch_size = 80         # We could actually still use batch_size for convenient
     hop_step = 5            # Hopping between two samples
     test_epoch = 20         # Test after these many epochs
-    save_epoch = 40
+    save_epoch = 20
     crf_weight = 1
     
     def __init__(self, data_length, label_classes):

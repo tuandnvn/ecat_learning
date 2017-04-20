@@ -102,10 +102,14 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
                 valid = check_validity_label( y_pred_array[:,i] )
                 valid_labels[valid] += 1
 
-                if verbose and not np.all(np.equal(y_pred_array[:,i], y[i])):
-                    logging.info('-------' + z[i] + '--------')
-                    logging.info(from_id_labels_to_str_labels(*y_pred_array[:,i]))
-                    logging.info(from_id_labels_to_str_labels(*y[i]))
+                # if verbose and not np.all(np.equal(y_pred_array[:,i], y[i])):
+                #     logging.info('-------' + z[i] + '--------')
+                #     logging.info(from_id_labels_to_str_labels(*y_pred_array[:,i]))
+                #     logging.info(from_id_labels_to_str_labels(*y[i]))
+                # if verbose:
+                #     logging.info('-------' + z[i] + '--------')
+                #     logging.info(from_id_labels_to_str_labels(*y_pred_array[:,i]))
+                #     logging.info(from_id_labels_to_str_labels(*y[i]))
                 
             epoch_confusion_matrixs = [confusion_matrix(y[:,i], y_pred[i], range(len(label_classes[i].values())) ) 
                                        for i in xrange(len(m.label_classes))]
@@ -118,6 +122,8 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
               (cost, costs, cost_iters, step, np.exp(costs / cost_iters)))
             
     if not is_training:
+        print (eval_iters)
+        print (m.batch_size)
         print_and_log("Number of valid/Number of invalid = %d/%d" % 
                       (valid_labels[True], valid_labels[False]))
         
@@ -169,7 +175,9 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--feature',  action='store',
                                 help = "Choose which feature to extract. Pick between RAW, PCAS and QSR. Default is RAW." )
 
-
+    parser.add_argument('-o', '--others',  nargs='+',
+                                help = "Other options to be put into configuration. Give a list of key and value. \
+                                Possible configuration values are [learning_rate, num_layers, hidden_size, keep_prob, lr_decay, test_crf_weight, test_batch_size]" )
 
 
     args = parser.parse_args()
@@ -183,6 +191,8 @@ if __name__ == '__main__':
     use_tree = args.tree
 
     feature_type = args.feature
+
+    others = args.others
     
     if mode == TRAIN:
         current_time = datetime.datetime.now()
@@ -212,6 +222,16 @@ if __name__ == '__main__':
             model_path = os.path.join(log_dir, "model.ckpt")
     
     if mode == TEST:
+        current_time = datetime.datetime.now()
+        time_str = '%s_%s_%s_%s_%s_%s' % (current_time.year, current_time.month, current_time.day, 
+                              current_time.hour, current_time.minute, current_time.second)
+
+        log_dir = os.path.join('logs', 'test_' + time_str)
+
+        print('Test into directory ' + log_dir)
+        os.makedirs(log_dir)
+
+        logging.basicConfig(filename = os.path.join(log_dir, 'logs.log'),level=logging.DEBUG)
         if model_path:
             print('Test using model ' + model_path)
         else:
@@ -248,7 +268,7 @@ if __name__ == '__main__':
     elif feature_type == QSR:
         SPLIT = QSR_SPLIT
         read_method = read_qsr_features
-        data_length = 21
+        data_length = 25
 
     if os.path.isfile(SPLIT) :
         # Load the file
@@ -283,18 +303,45 @@ if __name__ == '__main__':
         intermediate_config = ExplicitConfig(data_length, label_classes)
         eval_config = ExplicitConfig(data_length, label_classes)
     
+    test_crf_weight = 0.5
+    test_batch_size = 10
+
+    if others:
+        for i in xrange(len(others) // 2):
+            key = others[2 * i]
+            if key not in ['learning_rate', 'num_layers', 'hidden_size', 'keep_prob', 'lr_decay', 'test_crf_weight', 'test_batch_size']:
+                sys.exit("Other configuration value must be in [learning_rate, num_layers, hidden_size, keep_prob, lr_decay, max_max_epoch, test_crf_weight, test_batch_size]") 
+
+            value = None
+            if key in ['learning_rate', 'keep_prob', 'lr_decay'] :
+                value = float(others[2 * i + 1])
+            elif key in ['num_layers', 'hidden_size', 'max_max_epoch']:
+                value = int(others[2 * i + 1])
+
+            if value:
+                setattr(config, key, value)
+                setattr(intermediate_config, key, value)
+                setattr(eval_config, key, value)
+
+            if key == 'test_crf_weight':
+                test_crf_weight = float(others[2 * i + 1])
+
+            if key == 'test_batch_size':
+                test_batch_size = int(others[2 * i + 1])
+
     '''
     No dropout
     '''
     intermediate_config.keep_prob = 1
+
     '''
     No droupout
     Single input
     Decrease CRF weight 
     '''
     eval_config.keep_prob = 1
-    eval_config.batch_size = 1
-    eval_config.crf_weight = 0.5
+    eval_config.batch_size = test_batch_size
+    eval_config.crf_weight = test_crf_weight
     
     
     print('Turn train data to intermediate form')
@@ -376,7 +423,7 @@ if __name__ == '__main__':
                     lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
                     m.assign_lr(session, config.learning_rate * lr_decay)
 
-                    print_and_log("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+                    print_and_log("Epoch: %d Learning rate: %.6f" % (i + 1, session.run(m.lr)))
 
 #                     train_perplexity = run_epoch(session, m, im_train_data, 
 #                                                  im_train_lbl, im_train_inf,
@@ -409,9 +456,10 @@ if __name__ == '__main__':
                         _model_path = m.saver.save(session, model_path)
                         print_and_log("Model saved in file: %s" % _model_path)
                         print_and_log("Time %.3f" % (time.time() - start_time) )
-                except ValueError:
+                except ValueError, e: 
+                    print_and_log(e)
                     print_and_log("Value error, reload the most recent saved model")
-                    m.saver.restore(session, model_path)
+                    # m.saver.restore(session, model_path)
                     break
             
 #             train_writer.close()
