@@ -74,6 +74,8 @@ def generate_data(project_data, config, split_method = RAW) :
                         reversed_point_data += point_data[14:18] 
                         reversed_point_data += point_data[10:14]
                     elif split_method == QSR:
+                        # For features
+
                         reversed_point_data = point_data[:4]
                         # Hands to objects feature swap
                         reversed_point_data += point_data[8:12] 
@@ -89,6 +91,32 @@ def generate_data(project_data, config, split_method = RAW) :
                         reversed_point_data += point_data[18:19]
                         reversed_point_data += point_data[20:21] 
                         reversed_point_data += point_data[19:20]
+
+                        # For QTCCS
+                        reversed_point_data += point_data[22:23]
+                        reversed_point_data += point_data[21:22]
+                        reversed_point_data += point_data[24:25]
+                        reversed_point_data += point_data[23:24]
+
+                        # # For difference of features
+
+                        # fl = 21
+                        # reversed_point_data += point_data[fl:fl + 4]
+                        # # Hands to objects feature swap
+                        # reversed_point_data += point_data[fl + 8:fl + 12] 
+                        # reversed_point_data += point_data[fl + 4:fl + 8]
+
+                        # # Centroid direction and distance difference is symmetric
+                        # reversed_point_data += point_data[fl + 12:fl + 14]
+
+                        # # Object corners swap
+                        # reversed_point_data += point_data[fl + 16:fl + 18] 
+                        # reversed_point_data += point_data[fl + 14:fl + 16]
+
+                        # reversed_point_data += point_data[fl + 18:fl + 19]
+                        # reversed_point_data += point_data[fl + 20:fl + 21] 
+                        # reversed_point_data += point_data[fl + 19:fl + 20]
+
 
                     reversed_session_data[SESSION_DATA].append(reversed_point_data)
 
