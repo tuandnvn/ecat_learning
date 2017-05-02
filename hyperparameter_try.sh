@@ -1,6 +1,6 @@
 #!/bin/bash
-declare -a learning_rates=(0.2 0.5 1)
-declare -a hidden_sizes=(200 400)
+declare -a learning_rates=(0.2 0.5)
+declare -a hidden_sizes=(400)
 declare -a keep_probs=(0.5 0.6 0.8)
 declare -a lr_decays=(0.94 0.95 0.96)
 for learning_rate in "${learning_rates[@]}"

@@ -179,6 +179,9 @@ if __name__ == '__main__':
                                 help = "Other options to be put into configuration. Give a list of key and value. \
                                 Possible configuration values are [learning_rate, num_layers, hidden_size, keep_prob, lr_decay, test_crf_weight, test_batch_size]" )
 
+    parser.add_argument('-k', '--kfold',  action='store',
+                                help = "Number of fold in k-fold cross validation" )
+
 
     args = parser.parse_args()
     
@@ -193,6 +196,8 @@ if __name__ == '__main__':
     feature_type = args.feature
 
     others = args.others
+
+    kfold = args.kfold
     
     if mode == TRAIN:
         current_time = datetime.datetime.now()
@@ -250,6 +255,12 @@ if __name__ == '__main__':
     # ========================================================================
     # =============================READING INPUT =============================
 
+    # if kfold:
+    #     RAW_K_FOLD = 'fold_%d.pkl'  % kfold
+    #     PCAS_K_FOLD = 'fold_pca_%d.pkl' % kfold
+    #     QSR_K_FOLD = 'fold_qsr_%d.pkl'  % kfold
+    # else:
+        
     RAW_SPLIT = 'train_test_split.pkl'
     PCAS_SPLIT = 'train_test_split_pcas.pkl'
     QSR_SPLIT = 'train_test_split_qsr.pkl'
