@@ -430,3 +430,29 @@ def read_qsr_features():
                 data_length = len(new_point_datas[0])
 
     return data_length, project_data
+
+# def read_event_features():
+#     _, project_data = read_qsr_features()
+
+#     data_length = None
+
+#     for project_name in project_data:
+#         print '-----------------------------------'
+#         print project_name
+#         print '-----------------------------------'
+#         for session_data in project_data[project_name]:
+
+#             point_datas = session_data[SESSION_DATA]
+
+#             if len(point_datas) > 1:
+#                 first_frame = point_datas[0]
+#                 last_frame = point_datas[-1]
+#                 diff_frame = [last_frame[i] - first_frame[i] for i in xrange(len(first_frame))]
+#                 new_point_datas = first_frame + last_frame + diff_frame
+
+#                 session_data[SESSION_DATA] = new_point_datas
+
+#                 if data_length == None:
+#                     data_length = len(new_point_datas)
+
+#     return data_length, project_data

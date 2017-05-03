@@ -23,6 +23,7 @@ ALL_SLOTS = [SUBJECT, OBJECT, THEME, EVENT, PREP]
 RAW = 'raw'
 PCAS = 'pcas'
 QSR = 'qsr'
+EVENT = 'event'
 
 DEVICE = '/gpu:0'
 TEST_DEVICE = '/cpu:0'

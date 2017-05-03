@@ -23,14 +23,15 @@ import argparse
 from sklearn.metrics.classification import confusion_matrix
 
 from config import Simple_Train_Test_Config, ExplicitConfig, TreeConfig
-from generate_utils import generate_data, turn_to_intermediate_data, gothrough, \
+from generate_utils import generate_data, turn_to_intermediate_data, turn_to_intermediate_data_event, gothrough, \
     check_validity_label
 from lstm_crf_explicit import LSTM_CRF_Exp
 from lstm_treecrf import LSTM_TREE_CRF
+from mlp import MLP_CRF
 import numpy as np
 from read_utils import read_project_data, read_pca_features, read_qsr_features
 import tensorflow as tf
-from utils import label_classes, num_labels, from_id_labels_to_str_labels, RAW, PCAS, QSR
+from utils import label_classes, num_labels, from_id_labels_to_str_labels, RAW, PCAS, QSR, EVENT
 
 
 # default mode is to train and test at the same time
@@ -173,7 +174,7 @@ if __name__ == '__main__':
                                 help = "Whether to use the general tree LSTM-CRF model. By default, the explicit version is used." )
 
     parser.add_argument('-f', '--feature',  action='store',
-                                help = "Choose which feature to extract. Pick between RAW, PCAS and QSR. Default is RAW." )
+                                help = "Choose which feature to extract. Pick between RAW, PCAS, QSR and EVENT. Default is RAW." )
 
     parser.add_argument('-o', '--others',  nargs='+',
                                 help = "Other options to be put into configuration. Give a list of key and value. \
@@ -247,7 +248,7 @@ if __name__ == '__main__':
     else:
         feature_type = feature_type.lower() 
 
-    if feature_type not in [RAW, PCAS, QSR]:
+    if feature_type not in [RAW, PCAS, QSR, EVENT]:
         sys.exit("Feature type need to be in the set (raw, pcas, qsr)")
 
     
@@ -260,26 +261,35 @@ if __name__ == '__main__':
     #     PCAS_K_FOLD = 'fold_pca_%d.pkl' % kfold
     #     QSR_K_FOLD = 'fold_qsr_%d.pkl'  % kfold
     # else:
-        
+
     RAW_SPLIT = 'train_test_split.pkl'
     PCAS_SPLIT = 'train_test_split_pcas.pkl'
     QSR_SPLIT = 'train_test_split_qsr.pkl'
     
     SPLIT = None
     read_method = None
+    turn_to_intermediate_data_method = None
 
     if feature_type == RAW:
         SPLIT = RAW_SPLIT
         read_method = read_project_data
         data_length = 63
+        turn_to_intermediate_data_method = turn_to_intermediate_data
     elif feature_type == PCAS:
         SPLIT = PCAS_SPLIT
         read_method = read_pca_features
         data_length = 18
+        turn_to_intermediate_data_method = turn_to_intermediate_data
     elif feature_type == QSR:
         SPLIT = QSR_SPLIT
         read_method = read_qsr_features
         data_length = 25
+        turn_to_intermediate_data_method = turn_to_intermediate_data
+    elif feature_type == EVENT:
+        SPLIT = QSR_SPLIT
+        read_method = read_qsr_features
+        data_length = 25
+        turn_to_intermediate_data_method = turn_to_intermediate_data_event
 
     if os.path.isfile(SPLIT) :
         # Load the file
@@ -305,10 +315,15 @@ if __name__ == '__main__':
     print_and_log('Train size ' + str(len(train)))
     print_and_log('Test size ' + str(len(test)))
 
-    if use_tree:
-        config = TreeConfig(data_length, label_classes)
-        intermediate_config = TreeConfig(data_length, label_classes)
-        eval_config = TreeConfig(data_length, label_classes)
+    if feature_type in [RAW, PCAS, QSR]:
+        if use_tree:
+            config = TreeConfig(data_length, label_classes)
+            intermediate_config = TreeConfig(data_length, label_classes)
+            eval_config = TreeConfig(data_length, label_classes)
+        else:
+            config = ExplicitConfig(data_length, label_classes)
+            intermediate_config = ExplicitConfig(data_length, label_classes)
+            eval_config = ExplicitConfig(data_length, label_classes)
     else:
         config = ExplicitConfig(data_length, label_classes)
         intermediate_config = ExplicitConfig(data_length, label_classes)
@@ -356,18 +371,25 @@ if __name__ == '__main__':
     
     
     print('Turn train data to intermediate form')
-    im_train_data, im_train_lbl, im_train_inf = turn_to_intermediate_data(train, config.n_input, config.batch_size, 
+    im_train_data, im_train_lbl, im_train_inf = turn_to_intermediate_data_method(train, config.n_input, config.batch_size, 
                                                             config.num_steps, config.hop_step)
     
     print('Turn test data to intermediate form')
-    im_inter_test_data, im_inter_test_lbl, im_inter_test_inf = turn_to_intermediate_data(test, intermediate_config.n_input, 
+    im_inter_test_data, im_inter_test_lbl, im_inter_test_inf = turn_to_intermediate_data_method(test, intermediate_config.n_input, 
                                         intermediate_config.batch_size, 
                                         intermediate_config.num_steps, 
                                         intermediate_config.hop_step, )
-    im_final_test_data, im_final_test_lbl, im_final_test_inf = turn_to_intermediate_data(test, eval_config.n_input, 
+    im_final_test_data, im_final_test_lbl, im_final_test_inf = turn_to_intermediate_data_method(test, eval_config.n_input, 
                                         eval_config.batch_size, 
                                         eval_config.num_steps, 
                                         eval_config.hop_step)
+
+    '''
+    This is because event data size need to be reset
+    '''
+    if feature_type == EVENT:
+        data_length = 75
+        config.n_input = intermediate_config.n_input = eval_config.n_input = data_length
             
     logging.info("Train Configuration")
     for attr in dir(config):
@@ -388,33 +410,46 @@ if __name__ == '__main__':
         initializer = tf.random_uniform_initializer(-config.init_scale,
                                                     config.init_scale)
         
-        if use_tree:
-            print('-------- Setup m model ---------')
-            with tf.variable_scope("model", reuse=None, initializer=initializer):
-                config.tree.initiate_crf()
-                m = LSTM_TREE_CRF(is_training=True, config=config)
-                
-            print('-------- Setup m_intermediate_test model ---------')
-            with tf.variable_scope("model", reuse=True, initializer=initializer):
-                intermediate_config.tree.initiate_crf()
-                m_intermediate_test = LSTM_TREE_CRF(is_training=False, config=intermediate_config)
-                
-            print('-------- Setup mtest model ----------')
-            with tf.variable_scope("model", reuse=True, initializer=initializer):
-                eval_config.tree.initiate_crf()
-                mtest = LSTM_TREE_CRF(is_training=False, config=eval_config)
+        if feature_type in [RAW, PCAS, QSR]:
+            if use_tree:
+                print('-------- Setup m model ---------')
+                with tf.variable_scope("model", reuse=None, initializer=initializer):
+                    config.tree.initiate_crf()
+                    m = LSTM_TREE_CRF(is_training=True, config=config)
+                    
+                print('-------- Setup m_intermediate_test model ---------')
+                with tf.variable_scope("model", reuse=True, initializer=initializer):
+                    intermediate_config.tree.initiate_crf()
+                    m_intermediate_test = LSTM_TREE_CRF(is_training=False, config=intermediate_config)
+                    
+                print('-------- Setup mtest model ----------')
+                with tf.variable_scope("model", reuse=True, initializer=initializer):
+                    eval_config.tree.initiate_crf()
+                    mtest = LSTM_TREE_CRF(is_training=False, config=eval_config)
+            else:
+                print('-------- Setup m model ---------')
+                with tf.variable_scope("model", reuse=None, initializer=initializer):
+                    m = LSTM_CRF_Exp(is_training=True, config=config)
+                    
+                print('-------- Setup m_intermediate_test model ---------')
+                with tf.variable_scope("model", reuse=True, initializer=initializer):
+                    m_intermediate_test = LSTM_CRF_Exp(is_training=False, config=intermediate_config)
+                    
+                print('-------- Setup mtest model ----------')
+                with tf.variable_scope("model", reuse=True, initializer=initializer):
+                    mtest = LSTM_CRF_Exp(is_training=False, config=eval_config)
         else:
             print('-------- Setup m model ---------')
             with tf.variable_scope("model", reuse=None, initializer=initializer):
-                m = LSTM_CRF_Exp(is_training=True, config=config)
+                m = MLP_CRF(is_training=True, config=config)
                 
             print('-------- Setup m_intermediate_test model ---------')
             with tf.variable_scope("model", reuse=True, initializer=initializer):
-                m_intermediate_test = LSTM_CRF_Exp(is_training=False, config=intermediate_config)
+                m_intermediate_test = MLP_CRF(is_training=False, config=intermediate_config)
                 
             print('-------- Setup mtest model ----------')
             with tf.variable_scope("model", reuse=True, initializer=initializer):
-                mtest = LSTM_CRF_Exp(is_training=False, config=eval_config)
+                mtest = MLP_CRF(is_training=False, config=eval_config)
         
         if mode == TRAIN:
             tf.global_variables_initializer().run()

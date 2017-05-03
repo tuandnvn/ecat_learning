@@ -23,7 +23,7 @@ testing_data: similar as project_data
 import random
 
 import numpy as np
-from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels, RAW, PCAS, QSR
+from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels, RAW, PCAS, QSR, EVENT
 
 def generate_data(project_data, config, split_method = RAW) :
     """
@@ -57,9 +57,52 @@ def generate_data(project_data, config, split_method = RAW) :
 
                 reversed_session_data = {}
                 reversed_session_data[SESSION_NAME] = session_data[SESSION_NAME] + "_reversed"
-                reversed_session_data[SESSION_DATA] = []
                 reversed_session_data[SESSION_EVENTS] = []
 
+                def reverse_point_data_qsr(point_data):
+                    reversed_point_data = point_data[:4]
+                    # Hands to objects feature swap
+                    reversed_point_data += point_data[8:12] 
+                    reversed_point_data += point_data[4:8]
+
+                    # Centroid direction and distance difference is symmetric
+                    reversed_point_data += point_data[12:14]
+
+                    # Object corners swap
+                    reversed_point_data += point_data[16:18] 
+                    reversed_point_data += point_data[14:16]
+
+                    reversed_point_data += point_data[18:19]
+                    reversed_point_data += point_data[20:21] 
+                    reversed_point_data += point_data[19:20]
+
+                    # For QTCCS
+                    reversed_point_data += point_data[22:23]
+                    reversed_point_data += point_data[21:22]
+                    reversed_point_data += point_data[24:25]
+                    reversed_point_data += point_data[23:24]
+
+                    # # For difference of features
+                    # fl = 21
+                    # reversed_point_data += point_data[fl:fl + 4]
+                    # # Hands to objects feature swap
+                    # reversed_point_data += point_data[fl + 8:fl + 12] 
+                    # reversed_point_data += point_data[fl + 4:fl + 8]
+
+                    # # Centroid direction and distance difference is symmetric
+                    # reversed_point_data += point_data[fl + 12:fl + 14]
+
+                    # # Object corners swap
+                    # reversed_point_data += point_data[fl + 16:fl + 18] 
+                    # reversed_point_data += point_data[fl + 14:fl + 16]
+
+                    # reversed_point_data += point_data[fl + 18:fl + 19]
+                    # reversed_point_data += point_data[fl + 20:fl + 21] 
+                    # reversed_point_data += point_data[fl + 19:fl + 20]
+
+                    return reversed_point_data
+
+                reversed_session_data[SESSION_DATA] = []
                 for point_data in session_data[SESSION_DATA]:
                     if split_method == RAW:
                         reversed_point_data = point_data[:39]
@@ -73,50 +116,8 @@ def generate_data(project_data, config, split_method = RAW) :
                         # Object corners swap
                         reversed_point_data += point_data[14:18] 
                         reversed_point_data += point_data[10:14]
-                    elif split_method == QSR:
-                        # For features
-
-                        reversed_point_data = point_data[:4]
-                        # Hands to objects feature swap
-                        reversed_point_data += point_data[8:12] 
-                        reversed_point_data += point_data[4:8]
-
-                        # Centroid direction and distance difference is symmetric
-                        reversed_point_data += point_data[12:14]
-
-                        # Object corners swap
-                        reversed_point_data += point_data[16:18] 
-                        reversed_point_data += point_data[14:16]
-
-                        reversed_point_data += point_data[18:19]
-                        reversed_point_data += point_data[20:21] 
-                        reversed_point_data += point_data[19:20]
-
-                        # For QTCCS
-                        reversed_point_data += point_data[22:23]
-                        reversed_point_data += point_data[21:22]
-                        reversed_point_data += point_data[24:25]
-                        reversed_point_data += point_data[23:24]
-
-                        # # For difference of features
-
-                        # fl = 21
-                        # reversed_point_data += point_data[fl:fl + 4]
-                        # # Hands to objects feature swap
-                        # reversed_point_data += point_data[fl + 8:fl + 12] 
-                        # reversed_point_data += point_data[fl + 4:fl + 8]
-
-                        # # Centroid direction and distance difference is symmetric
-                        # reversed_point_data += point_data[fl + 12:fl + 14]
-
-                        # # Object corners swap
-                        # reversed_point_data += point_data[fl + 16:fl + 18] 
-                        # reversed_point_data += point_data[fl + 14:fl + 16]
-
-                        # reversed_point_data += point_data[fl + 18:fl + 19]
-                        # reversed_point_data += point_data[fl + 20:fl + 21] 
-                        # reversed_point_data += point_data[fl + 19:fl + 20]
-
+                    elif split_method == QSR or split_method == EVENT:
+                        reverse_point_data_qsr = reverse_point_data_qsr(point_data)
 
                     reversed_session_data[SESSION_DATA].append(reversed_point_data)
 
@@ -272,6 +273,15 @@ def turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_
     return (rearranged_data, rearranged_lbls, rearranged_info)
         
         
+def turn_to_intermediate_data_event(data, data_point_size, batch_size, num_steps, hop_step):
+    rearranged_data, rearranged_lbls, rearranged_info = turn_to_intermediate_data(data, data_point_size, batch_size, num_steps, hop_step)
+
+    first_frame = rearranged_data[:, :, 0, :]
+    last_frame = rearranged_data[:, :, -1, :]
+    difference = last_frame - first_frame
+
+    new_rearranged_data = np.concatenate( (first_frame, last_frame, difference), axis = 2 )
+    return (new_rearranged_data, rearranged_lbls, rearranged_info)
 
 def gothrough(rearranged_data, rearranged_lbls, rearranged_info):
     """
@@ -291,7 +301,7 @@ def gothrough(rearranged_data, rearranged_lbls, rearranged_info):
     z: [batch_size]
     """
     for i in range(np.shape(rearranged_data)[0]):
-        x = rearranged_data[i, :, :,  :]
-        y = rearranged_lbls[i, :, :]
-        z = rearranged_info[i, :]
+        x = rearranged_data[i]
+        y = rearranged_lbls[i]
+        z = rearranged_info[i]
         yield (x, y, z)
