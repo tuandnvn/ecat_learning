@@ -29,9 +29,9 @@ from lstm_crf_explicit import LSTM_CRF_Exp
 from lstm_treecrf import LSTM_TREE_CRF
 from mlp import MLP_CRF
 import numpy as np
-from read_utils import read_project_data, read_pca_features, read_qsr_features
+from read_utils import read_project_data, read_pca_features, read_qsr_features, read_sparse_qsr_features
 import tensorflow as tf
-from utils import label_classes, num_labels, from_id_labels_to_str_labels, RAW, PCAS, QSR, EVENT
+from utils import label_classes, num_labels, from_id_labels_to_str_labels, RAW, PCAS, QSR, SPARSE_QSR, EVENT
 
 
 # default mode is to train and test at the same time
@@ -174,7 +174,7 @@ if __name__ == '__main__':
                                 help = "Whether to use the general tree LSTM-CRF model. By default, the explicit version is used." )
 
     parser.add_argument('-f', '--feature',  action='store',
-                                help = "Choose which feature to extract. Pick between RAW, PCAS, QSR and EVENT. Default is RAW." )
+                                help = "Choose which feature to extract. Pick between RAW, PCAS, QSR, SPARSE_QSR and EVENT. Default is RAW." )
 
     parser.add_argument('-o', '--others',  nargs='+',
                                 help = "Other options to be put into configuration. Give a list of key and value. \
@@ -248,8 +248,10 @@ if __name__ == '__main__':
     else:
         feature_type = feature_type.lower() 
 
-    if feature_type not in [RAW, PCAS, QSR, EVENT]:
-        sys.exit("Feature type need to be in the set (raw, pcas, qsr)")
+    print(feature_type)
+
+    if feature_type not in [RAW, PCAS, QSR, SPARSE_QSR, EVENT]:
+        sys.exit("Feature type need to be in the set (raw, pcas, qsr, sparse_qsr, event)")
 
     
     # ========================================================================
@@ -265,6 +267,7 @@ if __name__ == '__main__':
     RAW_SPLIT = 'train_test_split.pkl'
     PCAS_SPLIT = 'train_test_split_pcas.pkl'
     QSR_SPLIT = 'train_test_split_qsr.pkl'
+    SPARSE_QSR_SPLIT = 'train_test_split_sparse_qsr.pkl'
     
     SPLIT = None
     read_method = None
@@ -284,6 +287,11 @@ if __name__ == '__main__':
         SPLIT = QSR_SPLIT
         read_method = read_qsr_features
         data_length = 25
+        turn_to_intermediate_data_method = turn_to_intermediate_data
+    elif feature_type == SPARSE_QSR:
+        SPLIT = SPARSE_QSR_SPLIT
+        read_method = read_sparse_qsr_features
+        data_length = 522
         turn_to_intermediate_data_method = turn_to_intermediate_data
     elif feature_type == EVENT:
         SPLIT = QSR_SPLIT
@@ -315,7 +323,7 @@ if __name__ == '__main__':
     print_and_log('Train size ' + str(len(train)))
     print_and_log('Test size ' + str(len(test)))
 
-    if feature_type in [RAW, PCAS, QSR]:
+    if feature_type in [RAW, PCAS, QSR, SPARSE_QSR_SPLIT]:
         if use_tree:
             config = TreeConfig(data_length, label_classes)
             intermediate_config = TreeConfig(data_length, label_classes)
@@ -410,7 +418,7 @@ if __name__ == '__main__':
         initializer = tf.random_uniform_initializer(-config.init_scale,
                                                     config.init_scale)
         
-        if feature_type in [RAW, PCAS, QSR]:
+        if feature_type in [RAW, PCAS, QSR, SPARSE_QSR]:
             if use_tree:
                 print('-------- Setup m model ---------')
                 with tf.variable_scope("model", reuse=None, initializer=initializer):

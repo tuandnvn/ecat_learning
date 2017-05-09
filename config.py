@@ -50,11 +50,11 @@ class ExplicitConfig(object):
     learning_rate = 0.2     # Set this value higher without norm clipping
                             # might make the cost explodes
     max_grad_norm = 5       # The maximum permissible norm of the gradient
-    num_layers = 3          # Number of LSTM layers
+    num_layers = 1          # Number of LSTM layers
     num_steps = 20          # Divide the data into num_steps segment 
-    hidden_size = 400       # the number of LSTM units
+    hidden_size = 1000       # the number of LSTM units
     max_epoch = 10          # The number of epochs trained with the initial learning rate
-    max_max_epoch = 201     # Number of running epochs
+    max_max_epoch = 121     # Number of running epochs
     keep_prob = 0.6         # Drop out keep probability, = 1.0 no dropout
     lr_decay = 0.950         # Learning rate decay
     batch_size = 80         # We could actually still use batch_size for convenient

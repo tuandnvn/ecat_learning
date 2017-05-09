@@ -23,7 +23,7 @@ testing_data: similar as project_data
 import random
 
 import numpy as np
-from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels, RAW, PCAS, QSR, EVENT
+from utils import SESSION_NAME, SESSION_DATA, SESSION_EVENTS, num_labels, RAW, PCAS, QSR, EVENT, SPARSE_QSR
 
 def generate_data(project_data, config, split_method = RAW) :
     """
@@ -102,6 +102,33 @@ def generate_data(project_data, config, split_method = RAW) :
 
                     return reversed_point_data
 
+                def reverse_point_data_sparse_qsr(point_data):
+                    reversed_point_data = point_data[:2 * 56]
+                    # Hands to objects feature swap
+                    reversed_point_data += point_data[4 * 56:6 * 56] 
+                    reversed_point_data += point_data[2 * 56:4 * 56]
+
+                    # Centroid direction and distance difference is symmetric
+                    reversed_point_data += point_data[6 * 56:7 * 56]
+
+                    # Object corners swap
+                    reversed_point_data += point_data[8 * 56:9 * 56] 
+                    reversed_point_data += point_data[7 * 56:8 * 56]
+
+                    anchor = 9 * 56
+                    reversed_point_data += point_data[anchor:anchor + 2]
+                    reversed_point_data += point_data[anchor + 2 * 2:anchor + 3 * 2] 
+                    reversed_point_data += point_data[anchor + 2:anchor + 2 * 2]
+
+                    anchor = 9 * 56 + 3 * 2
+                    # For QTCCS
+                    reversed_point_data += point_data[anchor + 3:anchor + 2 * 3]
+                    reversed_point_data += point_data[anchor:anchor + 3]
+                    reversed_point_data += point_data[anchor + 3 * 3:anchor + 4 * 3]
+                    reversed_point_data += point_data[anchor + 2 * 3:anchor + 3 * 3]
+
+                    return reversed_point_data
+
                 reversed_session_data[SESSION_DATA] = []
                 for point_data in session_data[SESSION_DATA]:
                     if split_method == RAW:
@@ -117,7 +144,9 @@ def generate_data(project_data, config, split_method = RAW) :
                         reversed_point_data += point_data[14:18] 
                         reversed_point_data += point_data[10:14]
                     elif split_method == QSR or split_method == EVENT:
-                        reverse_point_data_qsr = reverse_point_data_qsr(point_data)
+                        reversed_point_data = reverse_point_data_qsr(point_data)
+                    elif split_method == SPARSE_QSR:
+                        reversed_point_data = reverse_point_data_sparse_qsr(point_data)
 
                     reversed_session_data[SESSION_DATA].append(reversed_point_data)
 

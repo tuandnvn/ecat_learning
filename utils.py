@@ -24,6 +24,7 @@ RAW = 'raw'
 PCAS = 'pcas'
 QSR = 'qsr'
 EVENT = 'event'
+SPARSE_QSR = 'sparse_qsr'
 
 DEVICE = '/gpu:0'
 TEST_DEVICE = '/cpu:0'

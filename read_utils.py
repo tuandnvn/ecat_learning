@@ -423,6 +423,85 @@ def read_qsr_features():
             point_datas = session_data[SESSION_DATA]
 
             new_point_datas = qsr_feature_extractor( qsrlib, point_datas )
+ 
+            session_data[SESSION_DATA] = new_point_datas
+
+            if data_length == None:
+                data_length = len(new_point_datas[0])
+
+    return data_length, project_data
+
+def qsr_to_sparse_qsr(point_data):
+    '''
+    List of features from qsr
+
+    25 features
+
+    ('body', 'left_hand') - cardir_diff, argd_diff
+    ('body', 'right_hand') - cardir_diff, argd_diff 
+    ('left_hand', 'o1_centroid') - cardir_diff, argd_diff 
+    ('right_hand', 'o1_centroid') - cardir_diff, argd_diff 
+    ('left_hand', 'o2_centroid') - cardir_diff, argd_diff
+    ('right_hand', 'o2_centroid') - cardir_diff, argd_diff 
+    ('o1_centroid', 'o2_centroid') - cardir_diff, argd_diff 
+    ('o1_corner1','o1_corner2') - cardir_diff, argd_diff 
+    ('o2_corner1','o2_corner2') - cardir_diff, argd_diff
+    'body' - mos
+    'o1_centroid' - mos
+    'o2_centroid' - mos
+    ('o1_centroid', 'o2_centroid') - qtccs features
+
+    cardir_diff ranges from -8 to 8 (17 features)
+    argd_diff ranges from -19 to 19 (39 features)
+    mos ranges from 0 to 1 (2)
+    qtccs ranges from 0 to 2 (3) 
+
+    Total number of features = (17 + 39) x 9 + 2 x 3 +3 x 4 = 522 features
+    '''
+    new_point_data = []
+    for i in xrange(0,18,2):
+        cardir_diff = point_data[i]
+        t = [0] * 17
+        t[cardir_diff+8] = 1
+        new_point_data += t
+
+    for i in xrange(1,18,2):
+        argd_diff = point_data[i]
+        t = [0] * 39
+        t[argd_diff+19] = 1
+        new_point_data += t
+
+    for i in xrange(18,21):
+        mos = point_data[i]
+        t = [0] * 2
+        t[mos] = 1
+        new_point_data += t
+
+    for i in xrange(21,25):
+        qtcc = point_data[i]
+        t = [0] * 3
+        t[qtcc + 1] = 1
+        new_point_data += t
+
+    return new_point_data
+
+def read_sparse_qsr_features():
+    '''
+    Find planes for projection of data from DATA_DIR 
+    '''
+    _, project_data = read_qsr_features()
+
+    data_length = None
+
+    for project_name in project_data:
+        print '-----------------------------------'
+        print project_name
+        print '-----------------------------------'
+        for session_data in project_data[project_name]:
+
+            point_datas = session_data[SESSION_DATA]
+
+            new_point_datas = [qsr_to_sparse_qsr( point_data ) for point_data in point_datas]
 
             session_data[SESSION_DATA] = new_point_datas
 
