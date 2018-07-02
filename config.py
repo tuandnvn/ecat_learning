@@ -15,16 +15,16 @@ from utils import ALL_SLOTS, SUBJECT, role_to_id, OBJECT, THEME, prep_to_id, \
 
 class Simple_Train_Test_Config(object):
     # Using all projects for training
-    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
-                          'selfslidefrom','pullto', 'pushacross', 
+    train_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollpast', 'rollto', 'selfrollpast', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushpast', 
                           'rollfrom', 'selfrollfrom',
-                          'selfslideacross', 'selfslideto']
-    test_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
-                          'selfslidefrom','pullto', 'pushacross', 
+                          'selfslidepast', 'selfslideto']
+    test_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollpast', 'rollto', 'selfrollpast', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushpast', 
                           'rollfrom', 'selfrollfrom',
-                          'selfslideacross', 'selfslideto']
+                          'selfslidepast', 'selfslideto']
     session_training_percentage = (0, 0.6)
     session_testing_percentage = (0.6, 1)
     double_training = True
@@ -36,10 +36,10 @@ Training_percentages = 1
 '''
 class Partial_Train_Test_Config(object):
     # Using a subset of projects for training
-    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
+    train_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
                           'selfslidefrom']
-    test_project_names = ['pullto', 'pushacross', 
-                          'selfslideacross', 'selfslideto']
+    test_project_names = ['pullto', 'pushpast', 
+                          'selfslidepast', 'selfslideto']
     session_training_percentage = (0, 1)
     session_testing_percentage = (0, 1)
     double_training = False

@@ -41,7 +41,7 @@ ps = PorterStemmer()
 
 role_to_id = {'None' : 0, 'Performer': 1, 'Object_1': 2, 'Object_2' : 3}
 event_to_id = { 'None': 0, 'push' : 1, 'pull' : 2 , 'roll' : 3, 'slide': 4}
-prep_to_id = {'None': 0, 'Across': 1, 'From': 2, 'To': 3}
+prep_to_id = {'None': 0, 'Past': 1, 'From': 2, 'To': 3}
 
 id_to_role = {}
 id_to_event = {}
@@ -921,27 +921,27 @@ def run_epoch(session, m, data, lbl, info, eval_op, verbose=False, is_training=T
 '''Training_percentages = Percentage of training sessions/ Total # of sessions'''
 class Simple_Train_Test_Config(object):
     # Using all projects for training
-    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
-                          'selfslidefrom','pullto', 'pushacross', 
+    train_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollpast', 'rollto', 'selfrollpast', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushpast', 
                           'rollfrom', 'selfrollfrom',
-                          'selfslideacross', 'selfslideto']
-    test_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
-                          'selfslidefrom','pullto', 'pushacross', 
+                          'selfslidepast', 'selfslideto']
+    test_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollpast', 'rollto', 'selfrollpast', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushpast', 
                           'rollfrom', 'selfrollfrom',
-                          'selfslideacross', 'selfslideto']
+                          'selfslidepast', 'selfslideto']
     session_training_percentage = (0, 0.6)
     session_testing_percentage = (0.6, 1)
     double_training = True
 
 class Simple_Roll_Train_Test_Config(object):
     # Using a subset of projects for training
-    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                        'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
-                          'selfslidefrom','pullto', 'pushacross', 
+    train_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
+                        'rollpast', 'rollto', 'selfrollpast', 'selfrollto',
+                          'selfslidefrom','pullto', 'pushpast', 
                           'rollfrom', 'selfrollfrom',
-                          'selfslideacross', 'selfslideto']
+                          'selfslidepast', 'selfslideto']
     test_project_names = train_project_names
     session_training_percentage = (0, 0.6)
     session_testing_percentage = (0.6, 1)
@@ -952,10 +952,10 @@ class Simple_Roll_Train_Test_Config(object):
 '''Training_percentages = 1'''
 class Partial_Train_Test_Config(object):
     # Using a subset of projects for training
-    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
+    train_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
                           'selfslidefrom']
-    test_project_names = ['pullto', 'pushacross', 
-                          'selfslideacross', 'selfslideto']
+    test_project_names = ['pullto', 'pushpast', 
+                          'selfslidepast', 'selfslideto']
     session_training_percentage = (0, 1)
     session_testing_percentage = (0, 1)
     double_training = False

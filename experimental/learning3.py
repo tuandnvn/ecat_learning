@@ -51,7 +51,7 @@ ps = PorterStemmer()
 
 role_to_id = {'None' : 0, 'Performer': 1, 'Object_1': 2, 'Object_2' : 3}
 event_to_id = { 'None': 0, 'push' : 1, 'pull' : 2 , 'roll': 3, 'slide' : 4}
-prep_to_id = {'None': 0, 'Across': 1, 'From': 2, 'To': 3}
+prep_to_id = {'None': 0, 'Past': 1, 'From': 2, 'To': 3}
 
 id_to_role = {}
 id_to_event = {}
@@ -897,11 +897,11 @@ class Simple_Train_Test_Config(object):
 '''Training_percentages = 1'''
 class Partial_Train_Test_Config(object):
     # Using a subset of projects for training
-    train_project_names = ['pullacross', 'pullfrom', 'pushfrom', 'pushto',
-                            'rollacross', 'rollto', 'selfrollacross', 'selfrollto',
+    train_project_names = ['pullpast', 'pullfrom', 'pushfrom', 'pushto',
+                            'rollpast', 'rollto', 'selfrollpast', 'selfrollto',
                           'selfslidefrom']
-    test_project_names = ['pullto', 'pushacross', 'rollfrom', 'selfrollfrom',
-                          'selfslideacross', 'selfslideto']
+    test_project_names = ['pullto', 'pushpast', 'rollfrom', 'selfrollfrom',
+                          'selfslidepast', 'selfslideto']
     session_training_percentage = (0, 1)
     session_testing_percentage = (0, 1)
 
